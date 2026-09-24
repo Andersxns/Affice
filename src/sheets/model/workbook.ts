@@ -13,6 +13,7 @@ import {
   type DefinedName,
   type ImageSpec,
   type RowInfo,
+  type SheetPrint,
   type SheetProtection,
   type SheetView,
   type Validation,
@@ -32,8 +33,11 @@ export class Sheet {
   filter?: AutoFilter;
   view: SheetView = { zoom: 1, showGrid: true, showHeaders: true, showFormulas: false, rtl: false, freezeRows: 0, freezeCols: 0, scrollRow: 0, scrollCol: 0 };
   protection?: SheetProtection;
+  print?: SheetPrint;
   tabColor?: string;
   hidden = false;
+  /** Rows currently hidden by the auto-filter (recomputed when the filter is applied). */
+  filterHidden = new Set<number>();
   defaultColWidth = DEFAULT_COL_WIDTH;
   defaultRowHeight = DEFAULT_ROW_HEIGHT;
 
@@ -95,12 +99,12 @@ export class Sheet {
 
   rowHeight(r: number): number {
     const ri = this.rows.get(r);
-    if (ri?.hidden) return 0;
+    if (ri?.hidden || this.filterHidden.has(r)) return 0;
     return ri?.h ?? this.defaultRowHeight;
   }
 
   isRowHidden(r: number): boolean {
-    return !!this.rows.get(r)?.hidden;
+    return !!this.rows.get(r)?.hidden || this.filterHidden.has(r);
   }
 
   isColHidden(c: number): boolean {
@@ -249,6 +253,7 @@ export interface SheetJSON {
   filter?: AutoFilter;
   view: SheetView;
   protection?: SheetProtection;
+  print?: SheetPrint;
   tabColor?: string;
   hidden?: boolean;
   defaultColWidth?: number;
@@ -286,6 +291,7 @@ export function sheetToJSON(s: Sheet): SheetJSON {
     filter: s.filter,
     view: s.view,
     protection: s.protection,
+    print: s.print,
     tabColor: s.tabColor,
     hidden: s.hidden || undefined,
     defaultColWidth: s.defaultColWidth,
@@ -310,6 +316,7 @@ export function sheetFromJSON(j: SheetJSON): Sheet {
   s.filter = j.filter;
   s.view = { ...s.view, ...(j.view ?? {}) };
   s.protection = j.protection;
+  s.print = j.print;
   s.tabColor = j.tabColor;
   s.hidden = !!j.hidden;
   if (j.defaultColWidth) s.defaultColWidth = j.defaultColWidth;

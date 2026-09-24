@@ -219,5 +219,22 @@ export interface SheetProtection {
   allowFilter?: boolean;
 }
 
+export interface SheetPrint {
+  orientation: 'portrait' | 'landscape';
+  paper: 'letter' | 'a4' | 'legal' | 'a3' | 'a5' | 'tabloid';
+  margins: 'normal' | 'narrow' | 'wide';
+  fit: 'none' | 'width' | 'page';
+  scale: number;
+  gridlines: boolean;
+  headings: boolean;
+  area?: import('./address').Range;
+  repeatRows?: number;
+  centerH?: boolean;
+  header?: string;
+  footer?: string;
+}
+
+export const DEFAULT_PRINT: SheetPrint = { orientation: 'portrait', paper: 'letter', margins: 'normal', fit: 'width', scale: 100, gridlines: false, headings: false, footer: 'Page &P of &N' };
+
 export const DEFAULT_COL_WIDTH = 88;
 export const DEFAULT_ROW_HEIGHT = 22;

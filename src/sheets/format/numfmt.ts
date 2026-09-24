@@ -752,6 +752,9 @@ function dayFirstLocale(): boolean {
 
 const DAY_FIRST = typeof navigator !== 'undefined' ? dayFirstLocale() : false;
 
+/** Short date format matching the user's locale order. */
+export const SHORT_DATE = DAY_FIRST ? 'dd/mm/yyyy' : 'm/d/yyyy';
+
 /** Interprets typed cell input like Excel: numbers, %, currency, dates, times, booleans. */
 export function parseInput(raw: string): ParsedInput {
   const s = raw.trim();

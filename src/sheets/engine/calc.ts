@@ -128,8 +128,9 @@ class Ctx implements EvalContext {
     return this.eng.wb.style(this.eng.wb.cellStyleId(sh, r, c)).numFmt;
   }
   rowState(s: number, r: number): 'hidden' | 'filtered' | undefined {
-    if (this.eng.filteredRows.get(s)?.has(r)) return 'filtered';
-    return this.eng.sheet(s)?.rows.get(r)?.hidden ? 'hidden' : undefined;
+    const sh = this.eng.sheet(s);
+    if (sh?.filterHidden.has(r)) return 'filtered';
+    return sh?.rows.get(r)?.hidden ? 'hidden' : undefined;
   }
   now() {
     return this.eng.nowSerial();
@@ -158,6 +159,8 @@ export class CalcEngine {
   private cellIndex = new Map<number, Set<number>>();
   private ranges = new RangeIndex();
   private volatileCells = new Set<number>();
+  /** Formulas using functions Affice doesn't know: their cached result from the file is kept. */
+  private opaque = new Set<number>();
   private dirty = new Set<number>();
   private computing = new Set<number>();
   private spillVals = new Map<number, Map<number, Scalar>>();
@@ -173,8 +176,6 @@ export class CalcEngine {
   stats: CalcStats = { formulas: 0, lastRecalcMs: 0, circular: [] };
   random: () => number = Math.random;
   clock: () => Date = () => new Date();
-  /** Rows hidden by the auto-filter (maintained by the document layer). */
-  filteredRows = new Map<number, Set<number>>();
 
   constructor(wb: Workbook) {
     this.wb = wb;
@@ -205,6 +206,7 @@ export class CalcEngine {
     this.sheets.clear();
     for (const s of this.wb.sheets) this.sheets.set(s.id, s);
     this.asts.clear();
+    this.opaque.clear();
     this.deps.clear();
     this.cellIndex.clear();
     this.ranges.clear();
@@ -272,6 +274,12 @@ export class CalcEngine {
     }
     this.asts.set(g, ast);
     if (ast instanceof FormulaError) return;
+    for (const f of collectFunctions(ast)) {
+      if (!getFunction(f) && !this.wb.names.some((n) => n.name.toUpperCase() === f)) {
+        this.opaque.add(g);
+        break;
+      }
+    }
     const sheet = gSheet(g);
     const cells: number[] = [];
     const ranges: RangeEntry[] = [];
@@ -324,6 +332,7 @@ export class CalcEngine {
     }
     this.deps.delete(g);
     this.asts.delete(g);
+    this.opaque.delete(g);
     this.volatileCells.delete(g);
     this.dirty.delete(g);
     this.circular.delete(g);
@@ -410,6 +419,10 @@ export class CalcEngine {
     const cell = sheet?.cells.get(r * MAX_COLS + c);
     const ast = this.asts.get(g);
     if (!sheet || !cell || cell.f === undefined || !ast) {
+      this.dirty.delete(g);
+      return;
+    }
+    if (this.opaque.has(g) && cell.v !== undefined && cell.v !== null && !isErr(cell.v)) {
       this.dirty.delete(g);
       return;
     }
