@@ -49,7 +49,7 @@
 
   --titlebar-h: 40px;
   --ribbon-tabs-h: 34px;
-  --ribbon-body-h: 96px;
+  --ribbon-body-h: 102px;
   --statusbar-h: 28px;
   --ctl-h: 30px;
   --ctl-h-sm: 26px;
@@ -140,7 +140,7 @@
 :root[data-density='compact'] {
   --titlebar-h: 36px;
   --ribbon-tabs-h: 30px;
-  --ribbon-body-h: 84px;
+  --ribbon-body-h: 90px;
   --statusbar-h: 24px;
   --ctl-h: 26px;
   --ctl-h-sm: 22px;
