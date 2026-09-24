@@ -93,15 +93,15 @@ export async function exportDocument(model: DocModel, formatId: string, extra: E
   switch (formatId) {
     case 'docx': {
       const { exportDocx } = await import('./docx-export');
-      return exportDocx(model, extra.title);
+      return exportDocx(model, extra.title, extra.headingPages);
     }
     case 'odt': {
       const { exportOdt } = await import('./odt');
-      return exportOdt(model, extra.title);
+      return exportOdt(model, extra.title, extra.headingPages);
     }
     case 'rtf': {
       const { exportRtf } = await import('./rtf');
-      return encoder.encode(exportRtf(model));
+      return encoder.encode(exportRtf(model, extra.title));
     }
     case 'html':
       return encoder.encode(buildStandaloneHtml(model, extra.html, extra.title, extra.headingPages));

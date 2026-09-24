@@ -3,7 +3,7 @@ import { strFromU8, strToU8, unzipSync, zipSync, type Zippable } from 'fflate';
 import { bytesToDataUrl, dataUrlToBytes, escapeXml, extFromMime, imageSize, mimeFromExt, rasterizeToPng } from '@/lib/utils';
 import { defaultSettings, PAPER_SIZES, resolveStyles, type DocModel, type DocSettings, type HeaderFooter, type StyleDef } from '../model';
 import { cssToPx } from '../editor/extensions';
-import { renderMathPng, textOf } from './shared';
+import { collectHeadingsFromJson, renderMathPng, textOf } from './shared';
 import type { LoadedDoc } from './index';
 
 const NS = {
@@ -461,6 +461,9 @@ interface ExportCtx {
   listStyles: Map<string, string>;
   tableCount: number;
   math: Map<string, { path: string; w: number; h: number }>;
+  headingPages: number[];
+  headings: Array<{ level: number; text: string }>;
+  firstPageMaster: boolean;
 }
 
 const pt = (n: number) => `${Math.round(n * 100) / 100}pt`;
@@ -509,7 +512,7 @@ function textStyleFor(marks: JSONContent['marks'], ctx: ExportCtx): string | nul
   return name;
 }
 
-function paraStyleFor(n: JSONContent, parent: string, ctx: ExportCtx, extra: { breakBefore?: boolean } = {}): string {
+function paraStyleFor(n: JSONContent, parent: string, ctx: ExportCtx, extra: { breakBefore?: boolean; masterPage?: string } = {}): string {
   const a = n.attrs ?? {};
   const props: string[] = [];
   const al = a.textAlign as string | undefined;
@@ -523,13 +526,15 @@ function paraStyleFor(n: JSONContent, parent: string, ctx: ExportCtx, extra: { b
   if (a.dir === 'rtl') props.push('style:writing-mode="rl-tb"');
   if (a.shading) props.push(`fo:background-color="${escapeXml(String(a.shading))}"`);
   if (extra.breakBefore) props.push('fo:break-before="page"');
-  if (!props.length) return parent;
-  const key = `${parent}|${props.join(' ')}`;
+  if (!props.length && !extra.masterPage) return parent;
+  const key = `${parent}|${props.join(' ')}|${extra.masterPage ?? ''}`;
   let name = ctx.paraStyles.get(key);
   if (!name) {
     name = `P${ctx.paraStyles.size + 1}`;
     ctx.paraStyles.set(key, name);
-    ctx.autoStyles.push(`<style:style style:name="${name}" style:family="paragraph" style:parent-style-name="${parent}"><style:paragraph-properties ${props.join(' ')}/></style:style>`);
+    ctx.autoStyles.push(
+      `<style:style style:name="${name}" style:family="paragraph" style:parent-style-name="${parent}"${extra.masterPage ? ` style:master-page-name="${extra.masterPage}"` : ''}><style:paragraph-properties ${props.join(' ')}/></style:style>`,
+    );
   }
   return name;
 }
@@ -607,13 +612,17 @@ function blocksXml(nodes: JSONContent[] | undefined, ctx: ExportCtx, pageBreakNe
       case 'paragraph': {
         const sn = n.attrs?.styleName;
         const parent = sn === 'title' ? 'Title' : sn === 'subtitle' ? 'Subtitle' : sn === 'quote' ? 'Quotations' : 'Standard';
-        out += `<text:p text:style-name="${paraStyleFor(n, parent, ctx, { breakBefore: brk })}">${inlineXml(n.content, ctx)}</text:p>`;
+        const master = ctx.firstPageMaster ? 'First_20_Page' : undefined;
+        ctx.firstPageMaster = false;
+        out += `<text:p text:style-name="${paraStyleFor(n, parent, ctx, { breakBefore: brk, masterPage: master })}">${inlineXml(n.content, ctx)}</text:p>`;
         pageBreakNext.v = false;
         break;
       }
       case 'heading': {
         const l = Math.min(6, Number(n.attrs?.level) || 1);
-        out += `<text:h text:style-name="${paraStyleFor(n, `Heading_20_${l}`, ctx, { breakBefore: brk })}" text:outline-level="${l}">${inlineXml(n.content, ctx)}</text:h>`;
+        const master = ctx.firstPageMaster ? 'First_20_Page' : undefined;
+        ctx.firstPageMaster = false;
+        out += `<text:h text:style-name="${paraStyleFor(n, `Heading_20_${l}`, ctx, { breakBefore: brk, masterPage: master })}" text:outline-level="${l}">${inlineXml(n.content, ctx)}</text:h>`;
         pageBreakNext.v = false;
         break;
       }
@@ -645,9 +654,24 @@ function blocksXml(nodes: JSONContent[] | undefined, ctx: ExportCtx, pageBreakNe
       case 'pageBreak':
         pageBreakNext.v = true;
         break;
-      case 'tableOfContents':
-        out += `<text:p text:style-name="Contents_20_Heading">${escapeXml(String(n.attrs?.title ?? 'Contents'))}</text:p>`;
+      case 'tableOfContents': {
+        const title = escapeXml(String(n.attrs?.title ?? 'Contents'));
+        const headStyle = paraStyleFor({ attrs: {} }, 'Contents_20_Heading', ctx, { breakBefore: brk });
+        pageBreakNext.v = false;
+        const entries = ctx.headings
+          .map((h, i) => ({ ...h, page: ctx.headingPages[i] }))
+          .filter((h) => h.level <= 3 && h.text)
+          .map((h) => `<text:p text:style-name="Contents_20_${h.level}">${escapeXml(h.text)}<text:tab/>${h.page ?? ''}</text:p>`)
+          .join('');
+        const tpl = [1, 2, 3]
+          .map(
+            (l) =>
+              `<text:table-of-content-entry-template text:outline-level="${l}" text:style-name="Contents_20_${l}"><text:index-entry-link-start/><text:index-entry-chapter/><text:index-entry-text/><text:index-entry-tab-stop style:type="right" style:leader-char="."/><text:index-entry-page-number/><text:index-entry-link-end/></text:table-of-content-entry-template>`,
+          )
+          .join('');
+        out += `<text:table-of-content text:protected="true" text:name="Table of Contents1"><text:table-of-content-source text:outline-level="3"><text:index-title-template text:style-name="Contents_20_Heading">${title}</text:index-title-template>${tpl}</text:table-of-content-source><text:index-body><text:index-title text:name="Table of Contents1_Head"><text:p text:style-name="${headStyle}">${title}</text:p></text:index-title>${entries}</text:index-body></text:table-of-content>`;
         break;
+      }
       case 'mathBlock': {
         const m = ctx.math.get(String(n.attrs?.latex));
         out += `<text:p text:style-name="${paraStyleFor({ attrs: { textAlign: 'center' } }, 'Standard', ctx)}">${
@@ -665,6 +689,16 @@ function blocksXml(nodes: JSONContent[] | undefined, ctx: ExportCtx, pageBreakNe
   return out;
 }
 
+const ODT_TABLE_THEMES: Record<string, { head?: string; headText?: string; band?: string; border?: string; noBorder?: boolean }> = {
+  accent: { head: '#2f6dff', headText: '#ffffff', border: '#c9d6f3' },
+  banded: { band: '#f2f5fb', border: '#d6dbe5' },
+  minimal: { border: '#d6dbe5' },
+  plain: { noBorder: true },
+  dark: { head: '#1f2937', headText: '#ffffff', band: '#f3f4f6', border: '#c4c9d2' },
+  green: { head: '#17a35a', headText: '#ffffff', border: '#bfe6cf' },
+  orange: { head: '#f26a26', headText: '#ffffff', border: '#f7cdb5' },
+};
+
 function tableXml(n: JSONContent, ctx: ExportCtx): string {
   const tname = `Table${++ctx.tableCount}`;
   const rows = n.content ?? [];
@@ -677,7 +711,8 @@ function tableXml(n: JSONContent, ctx: ExportCtx): string {
   const total = widths.reduce((a, b) => a + b, 0);
   ctx.autoStyles.push(`<style:style style:name="${tname}" style:family="table"><style:table-properties style:width="${px2in(total)}" table:align="margins"/></style:style>`);
   widths.forEach((w, i) => ctx.autoStyles.push(`<style:style style:name="${tname}.C${i}" style:family="table-column"><style:table-column-properties style:column-width="${px2in(w)}"/></style:style>`));
-  const border = n.attrs?.styleName === 'plain' ? 'none' : '0.5pt solid #9aa4b5';
+  const theme = ODT_TABLE_THEMES[String(n.attrs?.styleName ?? '')] ?? { head: '#f1f4f9', border: '#9aa4b5' };
+  const border = theme.noBorder ? 'none' : `0.5pt solid ${theme.border ?? '#9aa4b5'}`;
   let body = widths.map((_, i) => `<table:table-column table:style-name="${tname}.C${i}"/>`).join('');
   const covered = new Map<number, number>(); // col → remaining rows covered
   rows.forEach((row, ri) => {
@@ -700,10 +735,12 @@ function tableXml(n: JSONContent, ctx: ExportCtx): string {
       const rspan = Number(c.attrs?.rowspan) || 1;
       const bg = c.attrs?.backgroundColor as string | null;
       const cstyle = `${tname}.R${ri}C${col}`;
+      const fill = bg ?? (c.type === 'tableHeader' ? theme.head : theme.band && ri % 2 === 0 && ri > 0 ? theme.band : undefined);
       ctx.autoStyles.push(
-        `<style:style style:name="${cstyle}" style:family="table-cell"><style:table-cell-properties fo:padding="0.04in" fo:border="${border}"${bg ? ` fo:background-color="${escapeXml(bg)}"` : c.type === 'tableHeader' ? ' fo:background-color="#f1f4f9"' : ''}${c.attrs?.valign === 'middle' ? ' style:vertical-align="middle"' : c.attrs?.valign === 'bottom' ? ' style:vertical-align="bottom"' : ''}/></style:style>`,
+        `<style:style style:name="${cstyle}" style:family="table-cell"><style:table-cell-properties fo:padding="0.04in" fo:border="${border}"${fill ? ` fo:background-color="${escapeXml(fill)}"` : ''}${c.attrs?.valign === 'middle' ? ' style:vertical-align="middle"' : c.attrs?.valign === 'bottom' ? ' style:vertical-align="bottom"' : ''}/></style:style>`,
       );
-      const content = c.type === 'tableHeader' ? (c.content ?? []).map((p) => ({ ...p, content: (p.content ?? []).map((t) => (t.type === 'text' ? { ...t, marks: [...(t.marks ?? []), { type: 'bold' }] } : t)) })) : c.content;
+      const headMarks = [{ type: 'bold' }, ...(theme.headText ? [{ type: 'textStyle', attrs: { color: theme.headText } }] : [])];
+      const content = c.type === 'tableHeader' ? (c.content ?? []).map((p) => ({ ...p, content: (p.content ?? []).map((t) => (t.type === 'text' ? { ...t, marks: [...(t.marks ?? []), ...headMarks] } : t)) })) : c.content;
       xml += `<table:table-cell table:style-name="${cstyle}" office:value-type="string"${span > 1 ? ` table:number-columns-spanned="${span}"` : ''}${rspan > 1 ? ` table:number-rows-spanned="${rspan}"` : ''}>${blocksXml(content, ctx) || '<text:p/>'}</table:table-cell>`;
       for (let k = 1; k < span; k++) xml += '<table:covered-table-cell/>';
       if (rspan > 1) for (let k = 0; k < span; k++) covered.set(col + k, rspan - 1);
@@ -745,7 +782,7 @@ function hfXml(h: HeaderFooter, contentWidthIn: number): string {
   return `<text:p text:style-name="Header">${f(h.left)}<text:tab/>${f(h.center)}<text:tab/>${f(h.right)}</text:p>`;
 }
 
-export async function exportOdt(model: DocModel, title: string): Promise<Uint8Array> {
+export async function exportOdt(model: DocModel, title: string, headingPages: Map<number, number> = new Map()): Promise<Uint8Array> {
   const s: DocSettings = model.settings;
   const content = model.content as JSONContent;
   const ctx: ExportCtx = {
@@ -759,6 +796,11 @@ export async function exportOdt(model: DocModel, title: string): Promise<Uint8Ar
     listStyles: new Map(),
     tableCount: 0,
     math: new Map(),
+    headingPages: Array.from(headingPages.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map((e) => e[1]),
+    headings: collectHeadingsFromJson(content, 6, true),
+    firstPageMaster: Boolean(model.settings.differentFirstPage),
   };
 
   // images & maths
@@ -804,7 +846,7 @@ export async function exportOdt(model: DocModel, title: string): Promise<Uint8Ar
   };
   const normal = styleDefProps(st.normal, ctx);
   const headings = [1, 2, 3, 4, 5, 6]
-    .map((l) => named(`Heading_20_${l}`, `Heading ${l}`, st[`h${l}` as 'h1'], ` style:default-outline-level="${l}" style:next-style-name="Standard"`, 'Standard', 'text'))
+    .map((l) => named(`Heading_20_${l}`, `Heading ${l}`, { ...st[`h${l}` as 'h1'] }, ` style:default-outline-level="${l}" style:next-style-name="Standard"`, 'Standard', 'text').replace('<style:paragraph-properties ', '<style:paragraph-properties fo:keep-with-next="always" '))
     .join('');
   const page = s.page;
   const pw = page.orientation === 'landscape' ? page.height : page.width;
@@ -830,6 +872,12 @@ ${named('Quotations', 'Quotations', st.quote, '', 'Standard', 'html')}
 <style:style style:name="Preformatted_20_Text" style:display-name="Preformatted Text" style:family="paragraph" style:parent-style-name="Standard"><style:paragraph-properties fo:background-color="#f5f7fb" fo:padding="0.06in" fo:margin-top="0.06in" fo:margin-bottom="0.1in"/><style:text-properties style:font-name="Courier New" fo:font-size="10pt"/></style:style>
 <style:style style:name="Horizontal_20_Line" style:display-name="Horizontal Line" style:family="paragraph" style:parent-style-name="Standard"><style:paragraph-properties fo:border-bottom="0.75pt solid #b8c0cf" fo:margin-bottom="0.15in"/></style:style>
 <style:style style:name="Contents_20_Heading" style:display-name="Contents Heading" style:family="paragraph" style:parent-style-name="Heading_20_1"/>
+${[1, 2, 3]
+  .map(
+    (l) =>
+      `<style:style style:name="Contents_20_${l}" style:display-name="Contents ${l}" style:family="paragraph" style:parent-style-name="Standard" style:class="index"><style:paragraph-properties fo:margin-left="${inch((l - 1) * 0.25)}" fo:margin-top="0in" fo:margin-bottom="0.03in"><style:tab-stops><style:tab-stop style:position="${inch(cw - (l - 1) * 0.25)}" style:type="right" style:leader-style="dotted" style:leader-text="."/></style:tab-stops></style:paragraph-properties></style:style>`,
+  )
+  .join('')}
 <style:style style:name="Header" style:family="paragraph" style:parent-style-name="Standard"><style:paragraph-properties><style:tab-stops><style:tab-stop style:position="${inch(cw / 2)}" style:type="center"/><style:tab-stop style:position="${inch(cw)}" style:type="right"/></style:tab-stops></style:paragraph-properties><style:text-properties fo:font-size="9pt" fo:color="#555555"/></style:style>
 <style:style style:name="frInline" style:family="graphic"><style:graphic-properties style:vertical-pos="top" style:vertical-rel="baseline"/></style:style>
 <style:style style:name="frLeft" style:family="graphic"><style:graphic-properties style:wrap="parallel" style:horizontal-pos="left" style:horizontal-rel="paragraph" fo:margin-right="0.12in"/></style:style>
@@ -838,7 +886,7 @@ ${named('Quotations', 'Quotations', st.quote, '', 'Standard', 'html')}
 <office:automatic-styles>
 <style:page-layout style:name="pm1"><style:page-layout-properties fo:page-width="${inch(pw)}" fo:page-height="${inch(ph)}" style:print-orientation="${page.orientation}" fo:margin-top="${inch(hasH ? Math.max(0.2, page.margins.top - 0.4) : page.margins.top)}" fo:margin-bottom="${inch(hasF ? Math.max(0.2, page.margins.bottom - 0.4) : page.margins.bottom)}" fo:margin-left="${inch(page.margins.left)}" fo:margin-right="${inch(page.margins.right)}"${s.pageColor ? ` fo:background-color="${s.pageColor}"` : ''}/>${hasH ? '<style:header-style><style:header-footer-properties fo:min-height="0.3in" fo:margin-bottom="0.1in"/></style:header-style>' : ''}${hasF ? '<style:footer-style><style:header-footer-properties fo:min-height="0.3in" fo:margin-top="0.1in"/></style:footer-style>' : ''}</style:page-layout>
 </office:automatic-styles>
-<office:master-styles><style:master-page style:name="Standard" style:page-layout-name="pm1">${hasH ? `<style:header>${hfXml(s.header, cw)}</style:header>` : ''}${hasF ? `<style:footer>${hfXml(s.footer, cw)}</style:footer>` : ''}</style:master-page></office:master-styles>
+<office:master-styles>${s.differentFirstPage ? '<style:master-page style:name="First_20_Page" style:display-name="First Page" style:page-layout-name="pm1" style:next-style-name="Standard"/>' : ''}<style:master-page style:name="Standard" style:page-layout-name="pm1">${hasH ? `<style:header>${hfXml(s.header, cw)}</style:header>` : ''}${hasF ? `<style:footer>${hfXml(s.footer, cw)}</style:footer>` : ''}</style:master-page></office:master-styles>
 </office:document-styles>`;
 
   const contentXml = `<?xml version="1.0" encoding="UTF-8"?>

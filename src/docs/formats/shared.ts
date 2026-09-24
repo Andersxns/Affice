@@ -8,8 +8,20 @@ export function textOf(n: JSONContent): string {
   return (n.content ?? []).map(textOf).join('');
 }
 
-export function collectHeadingsFromJson(doc: JSONContent, maxLevel = 3): Array<{ level: number; text: string }> {
+/**
+ * Headings in document order. With `topLevelOnly`, only top-level headings are returned
+ * (including empty ones) so indexes line up with the pagination's heading→page list.
+ */
+export function collectHeadingsFromJson(doc: JSONContent, maxLevel = 3, topLevelOnly = false): Array<{ level: number; text: string }> {
   const out: Array<{ level: number; text: string }> = [];
+  if (topLevelOnly) {
+    for (const n of doc.content ?? []) {
+      if (n.type !== 'heading') continue;
+      const level = Number(n.attrs?.level) || 1;
+      if (level <= maxLevel) out.push({ level, text: textOf(n).trim() });
+    }
+    return out;
+  }
   const walk = (n: JSONContent) => {
     if (n.type === 'heading') {
       const level = Number(n.attrs?.level) || 1;

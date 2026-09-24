@@ -627,7 +627,9 @@ function convertBody(container: Element, w: Walker, mappedDefaults: Map<string, 
     const attrs = paraAttrs(mapped.kind === 'custom' ? pp : own, mappedDefault);
 
     // a paragraph that contains only the TOC field result is dropped (the TOC node replaces it)
-    const numbered = pp.numId && pp.numId !== '0';
+    // Headings often carry outline numbering (LibreOffice, numbered headings) — keep them as headings.
+    const lvlFmt = pp.numId ? w.ctx.numbering.get(pp.numId)?.get(pp.ilvl ?? 0)?.fmt : undefined;
+    const numbered = Boolean(pp.numId && pp.numId !== '0' && mapped.kind !== 'heading' && !(mapped.kind === 'para' && mapped.styleName === 'title') && lvlFmt !== 'none');
     if (pp.pageBreakBefore) blocks.push({ type: 'pageBreak' });
 
     segments.forEach((seg, idx) => {
@@ -709,6 +711,9 @@ function convertBody(container: Element, w: Walker, mappedDefaults: Map<string, 
           const gallery = desc(kid(el, 'sdtPr'), 'docPartGallery')[0];
           if (gallery && /table of contents/i.test(attr(gallery, 'val') ?? '')) {
             closeLists();
+            const firstP = desc(kid(el, 'sdtContent'), 'p')[0];
+            const brk = firstP && (onOff(kid(kid(firstP, 'pPr'), 'pageBreakBefore')) || desc(firstP, 'br').some((b) => attr(b, 'type') === 'page'));
+            if (brk && blocks.length && blocks[blocks.length - 1].type !== 'pageBreak') blocks.push({ type: 'pageBreak' });
             if (!w.tocEmitted) {
               w.tocEmitted = true;
               blocks.push(tocNode(blocks));

@@ -2,7 +2,7 @@ import type { JSONContent } from '@tiptap/core';
 import { bytesToDataUrl, dataUrlToBytes } from '@/lib/utils';
 import { normalizeColor } from '@/ui/color';
 import { defaultSettings, PAPER_SIZES, resolveStyles, type DocModel, type DocSettings } from '../model';
-import { textOf } from './shared';
+import { collectHeadingsFromJson, textOf } from './shared';
 import type { LoadedDoc } from './index';
 
 /* ================================================================== IMPORT */
@@ -683,7 +683,7 @@ function rtfText(s: string): string {
   return out;
 }
 
-export function exportRtf(model: DocModel): string {
+export function exportRtf(model: DocModel, title = ''): string {
   const s = model.settings;
   const st = resolveStyles(s);
   const fonts: string[] = [st.normal.font ?? 'Calibri'];
@@ -756,7 +756,7 @@ export function exportRtf(model: DocModel): string {
     let p = '\\pard\\plain';
     const sn = a.styleName as string | undefined;
     const def = n.type === 'heading' ? st[`h${Math.min(6, Number(a.level) || 1)}` as 'h1'] : sn === 'title' ? st.title : sn === 'subtitle' ? st.subtitle : sn === 'quote' ? st.quote : st.normal;
-    if (n.type === 'heading') p += `\\s${Math.min(6, Number(a.level) || 1)}\\outlinelevel${(Number(a.level) || 1) - 1}`;
+    if (n.type === 'heading') p += `\\s${Math.min(6, Number(a.level) || 1)}\\outlinelevel${(Number(a.level) || 1) - 1}\\keepn`;
     const al = (a.textAlign as string) ?? def.align;
     if (al === 'center') p += '\\qc';
     else if (al === 'right') p += '\\qr';
@@ -788,13 +788,27 @@ export function exportRtf(model: DocModel): string {
           case 'orderedList':
           case 'taskList': {
             let k = 0;
+            const ordered = n.type === 'orderedList';
+            const ls = (n.attrs?.listStyle as string | null) ?? null;
+            const numFmt = ls === 'lower-alpha' ? '\\pnlcltr' : ls === 'upper-alpha' ? '\\pnucltr' : ls === 'lower-roman' ? '\\pnlcrm' : ls === 'upper-roman' ? '\\pnucrm' : '\\pndec';
+            const bulletChar = { circle: 9702, square: 9642, dash: 8211, check: 10003, arrow: 10148 }[ls ?? ''] ?? 8226;
             return (n.content ?? [])
               .map((item) => {
                 k++;
                 const [first, ...rest] = item.content ?? [];
-                const label = n.type === 'orderedList' ? `${(Number(n.attrs?.start) || 1) + k - 1}.` : n.type === 'taskList' ? (item.attrs?.checked ? '\\u9746?' : '\\u9744?') : '\\u8226?';
+                const num = (Number(n.attrs?.start) || 1) + k - 1;
+                const label = ordered
+                  ? `${ls === 'lower-alpha' ? String.fromCharCode(96 + num) : ls === 'upper-alpha' ? String.fromCharCode(64 + num) : num}.`
+                  : n.type === 'taskList'
+                    ? (item.attrs?.checked ? '\\u9746?' : '\\u9744?')
+                    : `\\u${bulletChar}?`;
                 const indent = 360 + listDepth * 360;
-                const head = first ? `${paraProps(first, `\\fi-360\\li${indent + 360}`)}{\\pntext ${label}\\tab}${runs(first.content)}\\par\n` : '';
+                const pn = ordered
+                  ? `{\\*\\pn\\pnlvlbody\\pnindent360\\pnstart${Number(n.attrs?.start) || 1}${numFmt}{\\pntxta .}}`
+                  : n.type === 'taskList'
+                    ? ''
+                    : `{\\*\\pn\\pnlvlblt\\pnindent360{\\pntxtb \\u${bulletChar}?}}`;
+                const head = first ? `${paraProps(first, `\\fi-360\\li${indent + 360}`)}{\\pntext ${label}\\tab}${pn}${runs(first.content)}\\par\n` : '';
                 return head + blocks(rest, listDepth + 1);
               })
               .join('');
@@ -831,8 +845,14 @@ export function exportRtf(model: DocModel): string {
               })
               .join('') + '\\pard\\plain \n';
           }
-          case 'tableOfContents':
-            return `${paraProps({ type: 'heading', attrs: { level: 1 } })}${rtfText(String(n.attrs?.title ?? 'Contents'))}\\par\n`;
+          case 'tableOfContents': {
+            const width = Math.round(((s.page.orientation === 'landscape' ? s.page.height : s.page.width) - s.page.margins.left - s.page.margins.right) * 1440);
+            const heads = collectHeadingsFromJson(model.content as JSONContent, 3);
+            return (
+              `${paraProps({ type: 'heading', attrs: { level: 1 } })}${rtfText(String(n.attrs?.title ?? 'Contents'))}\\par\n` +
+              heads.map((h) => `${paraProps({ type: 'paragraph', attrs: { indent: (h.level - 1) * 24, spaceAfter: 2 } }, `\\tqr\\tldot\\tx${width}`)}${rtfText(h.text)}\\par\n`).join('')
+            );
+          }
           default:
             return n.content ? blocks(n.content, listDepth) : '';
         }
@@ -843,15 +863,26 @@ export function exportRtf(model: DocModel): string {
   const page = s.page;
   const pw = Math.round((page.orientation === 'landscape' ? page.height : page.width) * 1440);
   const ph = Math.round((page.orientation === 'landscape' ? page.width : page.height) * 1440);
-  const hfText = (h: DocSettings['header']) =>
-    [h.left, h.center, h.right]
-      .filter(Boolean)
-      .join('    ')
-      .split(/(\{PAGE\}|\{PAGES\})/i)
-      .map((part) => (/^\{PAGE\}$/i.test(part) ? '{\\field{\\*\\fldinst PAGE}{\\fldrslt 1}}' : /^\{PAGES\}$/i.test(part) ? '{\\field{\\*\\fldinst NUMPAGES}{\\fldrslt 1}}' : rtfText(part)))
+  const cw = Math.round(((page.orientation === 'landscape' ? page.height : page.width) - page.margins.left - page.margins.right) * 1440);
+  const field = (t: string) =>
+    t
+      .split(/(\{PAGE\}|\{PAGES\}|\{DATE\}|\{TITLE\})/i)
+      .map((part) =>
+        /^\{PAGE\}$/i.test(part)
+          ? '{\\field{\\*\\fldinst PAGE}{\\fldrslt 1}}'
+          : /^\{PAGES\}$/i.test(part)
+            ? '{\\field{\\*\\fldinst NUMPAGES}{\\fldrslt 1}}'
+            : /^\{DATE\}$/i.test(part)
+              ? rtfText(new Date().toLocaleDateString())
+              : /^\{TITLE\}$/i.test(part)
+                ? rtfText(s.title || title.replace(/\.[^.]+$/, ''))
+                : rtfText(part),
+      )
       .join('');
-  const header = s.header.left || s.header.center || s.header.right ? `{\\header\\pard\\plain\\qc\\fs18 ${hfText(s.header)}\\par}` : '';
-  const footer = s.footer.left || s.footer.center || s.footer.right ? `{\\footer\\pard\\plain\\qc\\fs18 ${hfText(s.footer)}\\par}` : '';
+  const hfText = (h: DocSettings['header']) => `\\tqc\\tx${Math.round(cw / 2)}\\tqr\\tx${cw} ${field(h.left)}\\tab ${field(h.center)}\\tab ${field(h.right)}`;
+  const header = s.header.left || s.header.center || s.header.right ? `{\\header\\pard\\plain\\fs18\\cf${colorIdx('#555555')}${hfText(s.header)}\\par}` : '';
+  const footer = s.footer.left || s.footer.center || s.footer.right ? `{\\footer\\pard\\plain\\fs18\\cf${colorIdx('#555555')}${hfText(s.footer)}\\par}` : '';
+  const titlePg = s.differentFirstPage ? '\\titlepg{\\headerf\\pard\\plain\\par}{\\footerf\\pard\\plain\\par}' : '';
   const hex2rgb = (h: string) => {
     const n = parseInt(h.slice(1), 16);
     return `\\red${(n >> 16) & 255}\\green${(n >> 8) & 255}\\blue${n & 255};`;
@@ -865,6 +896,6 @@ ${stylesheet}
 {\\info{\\title ${rtfText(s.title)}}{\\author ${rtfText(s.author)}}}
 \\paperw${pw}\\paperh${ph}\\margl${Math.round(page.margins.left * 1440)}\\margr${Math.round(page.margins.right * 1440)}\\margt${Math.round(page.margins.top * 1440)}\\margb${Math.round(page.margins.bottom * 1440)}${page.orientation === 'landscape' ? '\\landscape' : ''}
 \\viewkind4\\deftab720
-${header}${footer}
+${titlePg}${header}${footer}
 ${body}}`;
 }

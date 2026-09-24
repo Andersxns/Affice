@@ -79,6 +79,7 @@ interface Ctx {
   listInstance: number;
   headingSlugs: Map<string, number>;
   contentWidthTwip: number;
+  headingPageList: number[];
 }
 
 function fontSizeHalfPts(v: string | undefined): number | undefined {
@@ -336,13 +337,15 @@ function block(n: JSONContent, ctx: Ctx, list?: ListCtx): Block[] {
     case 'pageBreak':
       return [new Paragraph({ children: [new PageBreak()] })];
     case 'tableOfContents': {
-      const heads = collectHeadingsFromJson(ctx.model.content as JSONContent, 3);
+      const heads = collectHeadingsFromJson(ctx.model.content as JSONContent, 6, true)
+        .map((h, i) => ({ ...h, page: ctx.headingPageList[i] }))
+        .filter((h) => h.level <= 3 && h.text);
       return [
         new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun(String(n.attrs?.title ?? 'Contents'))] }),
         new TableOfContents(String(n.attrs?.title ?? 'Contents'), {
           hyperlink: true,
           headingStyleRange: '1-3',
-          cachedEntries: heads.map((h) => ({ title: h.text, level: h.level })),
+          cachedEntries: heads.map((h) => ({ title: h.text, level: h.level, page: h.page })),
         }),
       ];
     }
@@ -535,7 +538,7 @@ async function collectAssets(content: JSONContent, ctx: Ctx) {
 
 /* --------------------------------------------------------------- entry */
 
-export async function exportDocx(model: DocModel, title: string): Promise<Uint8Array> {
+export async function exportDocx(model: DocModel, title: string, headingPages: Map<number, number> = new Map()): Promise<Uint8Array> {
   const s = model.settings;
   const styles = resolveStyles(s);
   const contentWidth = Math.round((s.page.orientation === 'landscape' ? s.page.height : s.page.width) * 1440 - (s.page.margins.left + s.page.margins.right) * 1440);
@@ -548,6 +551,9 @@ export async function exportDocx(model: DocModel, title: string): Promise<Uint8A
     listInstance: 0,
     headingSlugs: new Map(),
     contentWidthTwip: contentWidth,
+    headingPageList: Array.from(headingPages.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map((e) => e[1]),
   };
   const content = model.content as JSONContent;
   await collectAssets(content, ctx);
