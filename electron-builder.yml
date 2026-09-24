@@ -1,0 +1,172 @@
+# Packaging configuration for Affice (https://www.electron.build)
+appId: io.github.andersxns.affice
+productName: Affice
+copyright: Copyright © 2026 Affice contributors
+executableName: affice
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - package.json
+  - "!**/*.map"
+
+asar: true
+compression: normal
+electronLanguages: [en-US, en-GB, de, es, fr, it, nl, pt-BR, pt-PT, pl, sv, da, nb, fi, cs, tr, ru, uk, ja, ko, zh-CN, zh-TW]
+
+fileAssociations:
+  - ext: [docx, docm, dotx]
+    name: Word Document
+    description: Word Document
+    mimeType: application/vnd.openxmlformats-officedocument.wordprocessingml.document
+    icon: fileicons/doc
+    role: Editor
+  - ext: doc
+    name: Word 97-2003 Document
+    description: Word 97-2003 Document
+    mimeType: application/msword
+    icon: fileicons/doc
+    role: Editor
+  - ext: [odt, ott]
+    name: OpenDocument Text
+    description: OpenDocument Text
+    mimeType: application/vnd.oasis.opendocument.text
+    icon: fileicons/doc
+    role: Editor
+  - ext: rtf
+    name: Rich Text Document
+    description: Rich Text Document
+    mimeType: application/rtf
+    icon: fileicons/doc
+    role: Editor
+  - ext: afdoc
+    name: Affice Document
+    description: Affice Document
+    mimeType: application/x-affice-document
+    icon: fileicons/doc
+    role: Editor
+  - ext: [xlsx, xlsm, xltx]
+    name: Excel Workbook
+    description: Excel Workbook
+    mimeType: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+    icon: fileicons/sheet
+    role: Editor
+  - ext: xls
+    name: Excel 97-2003 Workbook
+    description: Excel 97-2003 Workbook
+    mimeType: application/vnd.ms-excel
+    icon: fileicons/sheet
+    role: Editor
+  - ext: [ods, ots]
+    name: OpenDocument Spreadsheet
+    description: OpenDocument Spreadsheet
+    mimeType: application/vnd.oasis.opendocument.spreadsheet
+    icon: fileicons/sheet
+    role: Editor
+  - ext: afsheet
+    name: Affice Sheet
+    description: Affice Sheet
+    mimeType: application/x-affice-sheet
+    icon: fileicons/sheet
+    role: Editor
+  - ext: [pptx, pptm, potx, ppsx]
+    name: PowerPoint Presentation
+    description: PowerPoint Presentation
+    mimeType: application/vnd.openxmlformats-officedocument.presentationml.presentation
+    icon: fileicons/slides
+    role: Editor
+  - ext: [ppt, pps]
+    name: PowerPoint 97-2003 Presentation
+    description: PowerPoint 97-2003 Presentation
+    mimeType: application/vnd.ms-powerpoint
+    icon: fileicons/slides
+    role: Editor
+  - ext: [odp, otp]
+    name: OpenDocument Presentation
+    description: OpenDocument Presentation
+    mimeType: application/vnd.oasis.opendocument.presentation
+    icon: fileicons/slides
+    role: Editor
+  - ext: afslides
+    name: Affice Presentation
+    description: Affice Presentation
+    mimeType: application/x-affice-slides
+    icon: fileicons/slides
+    role: Editor
+
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch: [x64, ia32, arm64]
+    - target: portable
+      arch: [x64, ia32]
+  artifactName: ${productName}-${version}-${os}-${arch}-setup.${ext}
+  legalTrademarks: Affice
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: Affice
+  menuCategory: false
+  runAfterFinish: true
+  deleteAppDataOnUninstall: false
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
+  installerSidebar: build/installerSidebar.bmp
+  uninstallerSidebar: build/uninstallerSidebar.bmp
+  license: LICENSE
+  artifactName: ${productName}-Setup-${version}-${arch}.${ext}
+
+portable:
+  artifactName: ${productName}-Portable-${version}-${arch}.${ext}
+
+linux:
+  icon: build/icons
+  category: Office
+  synopsis: Free office suite — Documents, Sheets and Slides
+  description: >-
+    Affice is a free and open-source office suite with a word processor (Documents),
+    a spreadsheet editor (Sheets) and a presentation editor (Slides). It opens and saves
+    Microsoft Office, OpenDocument, RTF, CSV, Markdown, HTML and more.
+  maintainer: Affice contributors <andersxns@users.noreply.github.com>
+  vendor: Affice
+  target:
+    - target: AppImage
+      arch: [x64, arm64]
+    - target: deb
+      arch: [x64, arm64]
+    - target: rpm
+      arch: [x64]
+    - target: tar.gz
+      arch: [x64, arm64]
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  desktop:
+    entry:
+      Name: Affice
+      GenericName: Office Suite
+      Comment: Documents, Sheets and Slides
+      Keywords: office;word;excel;powerpoint;document;spreadsheet;presentation;docx;xlsx;pptx;
+      StartupWMClass: Affice
+
+deb:
+  packageCategory: editors
+  priority: optional
+  artifactName: ${name}_${version}_${arch}.${ext}
+
+rpm:
+  artifactName: ${name}-${version}.${arch}.${ext}
+
+appImage:
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+publish: null
