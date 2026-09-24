@@ -27,6 +27,17 @@ function borderCss(b: CellStyle['bt']): string {
   return `${w}px ${kind} ${b.color ?? '#000'}`;
 }
 
+let measureCtx: CanvasRenderingContext2D | null = null;
+
+/** Approximate rendered width of cell text in CSS pixels. */
+function textWidth(text: string, st: CellStyle): number {
+  measureCtx ??= document.createElement('canvas').getContext('2d');
+  if (!measureCtx) return text.length * 7;
+  const px = ((st.size ?? 11) * 96) / 72;
+  measureCtx.font = `${st.italic ? 'italic ' : ''}${st.bold ? '700 ' : ''}${px}px ${st.font ? `'${st.font}', ` : ''}Calibri, Carlito, 'Liberation Sans', sans-serif`;
+  return Math.max(...text.split('\n').map((l) => measureCtx!.measureText(l).width));
+}
+
 function cellCss(st: CellStyle, isNum: boolean, gridlines: boolean): string {
   const css: string[] = [];
   if (st.font) css.push(`font-family:'${st.font}'`);
@@ -126,14 +137,44 @@ export async function sheetHtml(doc: SheetDoc, sheet: Sheet, rg: Range, pr: Shee
   for (const m of merges) for (let r = m.r1; r <= m.r2; r++) for (let c = m.c1; c <= m.c2; c++) if (r !== m.r1 || c !== m.c1) covered.add(`${r}:${c}`);
   let out = `<table class="sheet-print" style="width:${width}px"><colgroup>${pr.headings ? `<col style="width:${headW}px">` : ''}${colPx.map((w) => `<col style="width:${w}px">`).join('')}</colgroup>`;
   const repeat = Math.min(pr.repeatRows ?? 0, rows.length);
+  // an empty, unformatted cell that long text may run across (as it does on screen)
+  const blank = (r: number, c: number) => {
+    if (covered.has(`${r}:${c}`) || merges.some((x) => x.r1 === r && x.c1 === c)) return false;
+    if (doc.displayText(sheet, r, c).text) return false;
+    const st = doc.styleOf(sheet, r, c);
+    return !st.fill && !st.bt && !st.bb && !st.bl && !st.br;
+  };
   const rowHtml = (r: number) => {
     let tr = `<tr style="height:${sheet.rowHeight(r)}px">`;
     if (pr.headings) tr += `<th class="rh">${r + 1}</th>`;
-    for (const c of cols) {
+    let skip = 0;
+    for (let i = 0; i < cols.length; i++) {
+      const c = cols[i];
+      if (skip > 0) {
+        skip--;
+        continue;
+      }
       if (covered.has(`${r}:${c}`)) continue;
       const m = merges.find((x) => x.r1 === r && x.c1 === c);
-      const span = m ? ` rowspan="${rows.filter((x) => x >= m.r1 && x <= m.r2).length}" colspan="${cols.filter((x) => x >= m.c1 && x <= m.c2).length}"` : '';
+      let span = m ? ` rowspan="${rows.filter((x) => x >= m.r1 && x <= m.r2).length}" colspan="${cols.filter((x) => x >= m.c1 && x <= m.c2).length}"` : '';
       const d = doc.displayText(sheet, r, c);
+      if (!m && d.text && typeof d.value === 'string') {
+        const st0 = doc.styleOf(sheet, r, c);
+        const align = st0.hAlign ?? 'general';
+        if (!st0.wrap && (align === 'general' || align === 'left')) {
+          const need = textWidth(d.text, st0) + 6;
+          let have = colPx[i];
+          let n = 1;
+          while (have < need && i + n < cols.length && blank(r, cols[i + n])) {
+            have += colPx[i + n];
+            n++;
+          }
+          if (n > 1) {
+            span = ` colspan="${n}"`;
+            skip = n - 1;
+          }
+        }
+      }
       const st = doc.styleOf(sheet, r, c);
       const color = d.color ? `color:${d.color};` : '';
       const cell = sheet.get(r, c);
