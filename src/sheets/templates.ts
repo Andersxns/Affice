@@ -93,8 +93,10 @@ function budget(): Workbook {
     b.row(`B${r}`, [n, p, a, `=D${r}-C${r}`]);
   });
   b.row('B9', ['Total income', '=SUM(C6:C8)', '=SUM(D6:D8)', '=D9-C9'], { bold: true, bt: thin('#17a35a') });
+  b.style('C5:E5', { hAlign: 'right' });
   // expenses
   b.row('B11', ['Expenses', 'Planned', 'Actual', 'Difference'], { bold: true, color: '#ffffff', fill: '#0f3d27' });
+  b.style('C11:E11', { hAlign: 'right' });
   const expenses: [string, number, number][] = [
     ['Housing', 1400, 1400],
     ['Groceries', 520, 588],
@@ -154,6 +156,8 @@ function invoice(): Workbook {
   b.style('E7:E8', { numFmt: SHORT_DATE, hAlign: 'right' });
   b.style('E6', { hAlign: 'right' });
   b.row('B10', ['Description', 'Qty', 'Unit price', 'Amount'], { bold: true, color: '#ffffff', fill: blue });
+  b.style('C10', { hAlign: 'center' });
+  b.style('D10:E10', { hAlign: 'right' });
   const items: [string, number, number][] = [
     ['Website design', 1, 1800],
     ['Hosting (12 months)', 12, 15],

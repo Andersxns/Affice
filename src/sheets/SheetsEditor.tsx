@@ -13,7 +13,7 @@ import { openContextMenu, type MenuItem } from '@/ui/menu';
 import { toast } from '@/ui/toast';
 import { isMod } from '@/lib/utils';
 import { SheetDoc } from './doc';
-import { cellKey, keyCol, keyRow, MAX_COLS, MAX_ROWS, addrName, rangeName, type Range } from './model/address';
+import { cellKey, colName, keyCol, keyRow, MAX_COLS, MAX_ROWS, addrName, rangeName, type Range } from './model/address';
 import type { CellStyle, ChartType, CondFormat } from './model/types';
 import { workbookToJSON } from './model/workbook';
 import { copySelection, paste, fillDirection, autoFill, moveBlock, flashFill, type PasteMode } from './ops/clipboard';
@@ -286,14 +286,24 @@ function SheetsView({ tab, active, doc, ui }: { tab: Tab; active: boolean; doc: 
           return;
         }
         const s = doc.sheet;
+        // the header is formatted directly; banding is a formula rule so it stays in place when rows are sorted
+        const body: CellStyle = { ...t.band2 };
+        if (body.fill === '#ffffff') delete body.fill;
+        const inside = (x: Range) => x.r1 >= rg.r1 && x.r2 <= rg.r2 && x.c1 >= rg.c1 && x.c2 <= rg.c2;
         doc.transact('Format as table', (tx) => {
           for (let r = rg.r1; r <= rg.r2; r++) {
-            const st = r === rg.r1 ? t.header : (r - rg.r1) % 2 === 1 ? t.band1 : t.band2;
+            const st = r === rg.r1 ? t.header : body;
             for (let c = rg.c1; c <= rg.c2; c++) {
               const k = cellKey(r, c);
               const cur = s.cells.get(k);
               tx.patch(s, k, { s: doc.wb.patchStyle(cur?.s ?? doc.wb.cellStyleId(s, r, c), { fill: undefined, color: undefined, bb: undefined, ...st }) });
             }
+          }
+          tx.prop(s, 'cf');
+          s.cf = s.cf.filter((x) => !(x.id.startsWith('band') && x.ranges.every(inside)));
+          if (rg.r2 > rg.r1 && (t.band1.fill || t.band1.color)) {
+            const first = `$${colName(rg.c1)}$${rg.r1 + 2}`;
+            s.cf.push({ id: newId('band'), ranges: [{ r1: rg.r1 + 1, c1: rg.c1, r2: rg.r2, c2: rg.c2 }], type: 'formula', values: [`=MOD(ROW()-ROW(${first}),2)=0`], style: { fill: t.band1.fill, color: t.band1.color } });
           }
           tx.prop(s, 'filter');
           s.filter = { range: rg, columns: {} };
@@ -615,6 +625,11 @@ function SheetsView({ tab, active, doc, ui }: { tab: Tab; active: boolean; doc: 
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc, ui, doCopy, doPaste, painter, formulaBar, refitRows]);
+
+  // development builds expose the active workbook to automated UI tests
+  useEffect(() => {
+    if (import.meta.env.DEV && active) (window as unknown as { __afficeSheet?: unknown }).__afficeSheet = { doc, ui, a };
+  }, [active, doc, ui, a]);
 
   /* ------------------------------------------------------ grid handlers */
   const buildMenu = useCallback(

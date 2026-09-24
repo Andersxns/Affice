@@ -30,6 +30,8 @@ export class SheetUI {
   findHits: Set<number> | null = null;
   clipPhase = 0;
   showFormulas = false;
+  /** Where a run of Tab presses started, so Enter can return to that column (like Excel). */
+  private tabRun: { sheet: number; col: number; at: CellPos } | null = null;
   version = 0;
   /** Scroll offsets (sheet px, unzoomed) per sheet id. */
   scroll = new Map<number, { x: number; y: number }>();
@@ -266,6 +268,22 @@ export class SheetUI {
     const rg = sel.ranges[sel.ranges.length - 1];
     const multi = rg.r1 !== rg.r2 || rg.c1 !== rg.c2;
     if (!multi) {
+      // Enter after a run of Tabs returns to the column where the run started, one row down
+      const { r, c } = sel.active;
+      const sheet = this.doc.sheet.id;
+      const t = this.tabRun;
+      const run = t && t.sheet === sheet && t.at.r === r && t.at.c === c ? t : null;
+      this.tabRun = null;
+      if (dc) {
+        this.move(0, dc);
+        this.tabRun = { sheet, col: run?.col ?? c, at: { ...this.doc.sel.active } };
+        return;
+      }
+      if (dr > 0 && run && run.col !== c) {
+        const m = this.doc.sheet.mergeAt(r, c);
+        this.selectCell(Math.min(MAX_ROWS - 1, (m ? m.r2 : r) + 1), run.col);
+        return;
+      }
       this.move(dr, dc);
       return;
     }

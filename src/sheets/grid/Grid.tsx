@@ -193,13 +193,16 @@ export function Grid({ doc, ui, active, h }: { doc: SheetDoc; ui: SheetUI; activ
     });
   }, [theme, size.w, size.h, viewport, doc, ui, active]);
 
+  // the frame always runs the latest draw so a request made with a stale closure still paints current state
+  const drawRef = useRef(draw);
+  drawRef.current = draw;
   const requestDraw = useCallback(() => {
-    if (!frame.current) frame.current = requestAnimationFrame(draw);
-  }, [draw]);
+    if (!frame.current) frame.current = requestAnimationFrame(() => drawRef.current());
+  }, []);
 
   useEffect(() => {
     requestDraw();
-  }, [requestDraw, docVersion, uiVersion, dragTick]);
+  }, [requestDraw, draw, docVersion, uiVersion, dragTick]);
 
   useEffect(
     () => () => {

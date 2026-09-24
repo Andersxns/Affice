@@ -206,8 +206,8 @@ function heavier(a: Border | undefined, b: Border | undefined): Border | undefin
   return (BORDER_W[b.style] ?? 1) > (BORDER_W[a.style] ?? 1) ? b : a;
 }
 
-function strokeBorder(ctx: CanvasRenderingContext2D, b: Border, x1: number, y1: number, x2: number, y2: number, dpr: number, text: string) {
-  ctx.strokeStyle = b.color ?? text;
+function strokeBorder(ctx: CanvasRenderingContext2D, b: Border, x1: number, y1: number, x2: number, y2: number, dpr: number, color: string) {
+  ctx.strokeStyle = color;
   const dash: Record<string, number[]> = {
     dotted: [1, 1],
     hair: [1, 1],
@@ -378,6 +378,7 @@ export function renderGrid(inp: RenderInput): void {
   if (vp.fc > 0) colsSets.push([0, vp.fc - 1]);
   colsSets.push([bc0, bc1]);
 
+  const tone = theme.dark ? darkTone : (c: string) => c;
   const showFormulas = !!ov.showFormulas || sheet.view.showFormulas;
   const merges = sheet.merges;
   const infoCache = new Map<number, CellInfo | null>();
@@ -420,10 +421,21 @@ export function renderGrid(inp: RenderInput): void {
     const [r0, r1] = rr;
     const [c0, c1] = cc;
     if (r1 < r0 || c1 < c0) return;
-    const clipX = Math.max(vp.headerW, m.x(c0));
-    const clipY = Math.max(vp.headerH, m.y(r0));
-    const clipX2 = Math.min(W, m.x(c1 + 1));
-    const clipY2 = Math.min(H, m.y(r1 + 1));
+    // pane-local coordinates, so a merged area crossing a frozen split continues into the next pane
+    const frozenCols = c0 < vp.fc;
+    const frozenRows = r0 < vp.fr;
+    const X = (c: number) => (frozenCols ? vp.headerW + geo.cols.pos(c) * z : m.bodyX0 + (geo.cols.pos(c) - m.fcW - vp.scrollX) * z);
+    const Y = (r: number) => (frozenRows ? vp.headerH + geo.rows.pos(r) * z : m.bodyY0 + (geo.rows.pos(r) - m.frH - vp.scrollY) * z);
+    // the cell that paints a merged area in this pane: its anchor, or the pane's first cell of it when the anchor is outside
+    const paintAt = (r: number, c: number): { r: number; c: number; mg?: Range } | null => {
+      const mg = covered.get(cellKey(r, c));
+      if (!mg) return { r, c };
+      return r === Math.max(mg.r1, r0) && c === Math.max(mg.c1, c0) ? { r: mg.r1, c: mg.c1, mg } : null;
+    };
+    const clipX = Math.max(vp.headerW, X(c0));
+    const clipY = Math.max(vp.headerH, Y(r0));
+    const clipX2 = Math.min(W, X(c1 + 1));
+    const clipY2 = Math.min(H, Y(r1 + 1));
     // frozen split: body regions must not paint over frozen panes
     const x0 = cc[0] >= vp.fc ? Math.max(clipX, m.bodyX0) : clipX;
     const y0 = rr[0] >= vp.fr ? Math.max(clipY, m.bodyY0) : clipY;
@@ -441,12 +453,12 @@ export function renderGrid(inp: RenderInput): void {
       ctx.lineWidth = 1 / dpr;
       ctx.beginPath();
       for (let c = c0; c <= c1 + 1; c++) {
-        const x = snap(m.x(c) - 1 / dpr);
+        const x = snap(X(c) - 1 / dpr);
         ctx.moveTo(x, y0);
         ctx.lineTo(x, y1);
       }
       for (let r = r0; r <= r1 + 1; r++) {
-        const y = snap(m.y(r) - 1 / dpr);
+        const y = snap(Y(r) - 1 / dpr);
         ctx.moveTo(x0, y);
         ctx.lineTo(x1, y);
       }
@@ -455,29 +467,30 @@ export function renderGrid(inp: RenderInput): void {
 
     // ---- fills (cell fill, colour scales) & data bars
     for (let r = r0; r <= r1; r++) {
-      const ry = m.y(r);
-      const rh = m.y(r + 1) - ry;
+      const ry = Y(r);
+      const rh = Y(r + 1) - ry;
       if (rh <= 0) continue;
       for (let c = c0; c <= c1; c++) {
-        const k = cellKey(r, c);
-        const mg = covered.get(k);
-        if (mg && (mg.r1 !== r || mg.c1 !== c)) continue;
-        const inf = info(r, c);
-        const cx = m.x(c);
-        let cw = m.x(c + 1) - cx;
+        const at = paintAt(r, c);
+        if (!at) continue;
+        const mg = at.mg;
+        const inf = info(at.r, at.c);
+        const cx = X(at.c);
+        const ty = mg ? Y(at.r) : ry;
+        let cw = X(c + 1) - cx;
         let ch = rh;
         if (mg) {
-          cw = m.x(mg.c2 + 1) - cx;
-          ch = m.y(mg.r2 + 1) - ry;
+          cw = X(mg.c2 + 1) - cx;
+          ch = Y(mg.r2 + 1) - ty;
           // merged areas hide the gridlines inside them
           ctx.fillStyle = theme.bg;
-          ctx.fillRect(cx, ry, cw - 1 / dpr, ch - 1 / dpr);
+          ctx.fillRect(cx, ty, cw - 1 / dpr, ch - 1 / dpr);
         }
         if (!inf || cw <= 0) continue;
         const fill = inf.cf?.scale ?? inf.st.fill;
         if (fill) {
-          ctx.fillStyle = fill;
-          ctx.fillRect(cx - 1 / dpr, ry - 1 / dpr, cw + 1 / dpr, ch + 1 / dpr);
+          ctx.fillStyle = tone(fill, 'fill');
+          ctx.fillRect(cx - 1 / dpr, ty - 1 / dpr, cw + 1 / dpr, ch + 1 / dpr);
         }
         if (inf.cf?.bar) {
           const b = inf.cf.bar;
@@ -487,15 +500,15 @@ export function renderGrid(inp: RenderInput): void {
           g.addColorStop(0, b.color);
           g.addColorStop(1, b.color + '40');
           ctx.fillStyle = b.negative ? b.color + 'b0' : g;
-          ctx.fillRect(cx + pad + bw * b.from, ry + pad, Math.max(1, bw * (b.to - b.from)), ch - pad * 2);
+          ctx.fillRect(cx + pad + bw * b.from, ty + pad, Math.max(1, bw * (b.to - b.from)), ch - pad * 2);
         }
       }
     }
 
     // ---- text
     for (let r = r0; r <= r1; r++) {
-      const ry = m.y(r);
-      const rh = m.y(r + 1) - ry;
+      const ry = Y(r);
+      const rh = Y(r + 1) - ry;
       if (rh <= 0) continue;
       // include cells left of the region whose text may overflow into view
       let start = c0;
@@ -508,17 +521,18 @@ export function renderGrid(inp: RenderInput): void {
         end++;
         if (info(r, end)?.text) break;
       }
-      for (let c = start; c <= end; c++) {
-        const k = cellKey(r, c);
-        const mg = covered.get(k);
-        if (mg && (mg.r1 !== r || mg.c1 !== c)) continue;
-        if (ov.editing && ov.editing.r === r && ov.editing.c === c) continue;
-        const inf = info(r, c);
+      for (let col = start; col <= end; col++) {
+        const at = paintAt(r, col);
+        if (!at) continue;
+        const { r: ar, c, mg } = at;
+        if (ov.editing && ov.editing.r === ar && ov.editing.c === c) continue;
+        const inf = info(ar, c);
         if (!inf || !inf.text) continue;
         const st = inf.st;
-        const cx = m.x(c);
-        const cw = (mg ? m.x(mg.c2 + 1) : m.x(c + 1)) - cx;
-        const ch = (mg ? m.y(mg.r2 + 1) : m.y(r + 1)) - ry;
+        const cx = X(c);
+        const ry = Y(ar);
+        const cw = (mg ? X(mg.c2 + 1) : X(c + 1)) - cx;
+        const ch = (mg ? Y(mg.r2 + 1) : Y(r + 1)) - ry;
         if (cw <= 0 || ch <= 0) continue;
         const { font, px } = cellFont(st, z);
         const pad = 3 * z + (st.indent ?? 0) * 9 * z;
@@ -531,7 +545,7 @@ export function renderGrid(inp: RenderInput): void {
         const avail = cw - pad * 2;
         if (isNum && !st.wrap && !showFormulas) text = fitText(ctx, font, inf.value as number, st.numFmt, Math.max(4, cw - 4 * z), text);
         ctx.font = font;
-        ctx.fillStyle = inf.color ? namedColor(inf.color) : st.color ?? theme.text;
+        ctx.fillStyle = inf.color ? tone(namedColor(inf.color), 'text') : st.color ? tone(st.color, 'text') : theme.text;
         const metricsF = fontMetrics(ctx, font, px);
         const lineH = px * 1.22;
         const va = st.vAlign ?? 'bottom';
@@ -595,7 +609,7 @@ export function renderGrid(inp: RenderInput): void {
           if (align === 'left' || align === 'center') {
             let cc = c + 1;
             while (cc < MAX_COLS && tx + tw > clipR && !info(r, cc)?.text && !covered.has(cellKey(r, cc))) {
-              clipR = m.x(cc + 1);
+              clipR = X(cc + 1);
               cc++;
               if (cc - c > 60) break;
             }
@@ -603,7 +617,7 @@ export function renderGrid(inp: RenderInput): void {
           if (align === 'right' || align === 'center') {
             let cc = c - 1;
             while (cc >= 0 && tx < clipL && !info(r, cc)?.text && !covered.has(cellKey(r, cc))) {
-              clipL = m.x(cc);
+              clipL = X(cc);
               cc--;
               if (c - cc > 60) break;
             }
@@ -623,13 +637,13 @@ export function renderGrid(inp: RenderInput): void {
 
     // ---- icons, notes
     for (let r = r0; r <= r1; r++) {
-      const ry = m.y(r);
+      const ry = Y(r);
       for (let c = c0; c <= c1; c++) {
         const inf = info(r, c);
         if (!inf) continue;
-        const cx = m.x(c);
-        const cw = m.x(c + 1) - cx;
-        const ch = m.y(r + 1) - ry;
+        const cx = X(c);
+        const cw = X(c + 1) - cx;
+        const ch = Y(r + 1) - ry;
         if (inf.cf?.icon) {
           const s = Math.min(ch - 4 * z, 14 * z);
           drawIcon(ctx, inf.cf.icon.set, inf.cf.icon.index, inf.cf.icon.total, cx + 3 * z, ry + (ch - s) / 2, s);
@@ -649,7 +663,7 @@ export function renderGrid(inp: RenderInput): void {
     // ---- borders (each edge drawn once, heavier style wins)
     ctx.lineCap = 'square';
     for (let r = r0; r <= r1 + 1; r++) {
-      const y = m.y(r) - 1 / dpr;
+      const y = Y(r) - 1 / dpr;
       for (let c = c0; c <= c1; c++) {
         const above = r > 0 ? info(r - 1, c)?.st.bb : undefined;
         const below = r < MAX_ROWS ? info(r, c)?.st.bt : undefined;
@@ -657,11 +671,11 @@ export function renderGrid(inp: RenderInput): void {
         if (!b) continue;
         const inside = covered.get(cellKey(r, c));
         if (inside && inside.r1 < r && covered.get(cellKey(r - 1, c)) === inside) continue;
-        strokeBorder(ctx, b, m.x(c) - 1 / dpr, y, m.x(c + 1) - 1 / dpr, y, dpr, theme.text);
+        strokeBorder(ctx, b, X(c) - 1 / dpr, y, X(c + 1) - 1 / dpr, y, dpr, b.color ? tone(b.color, 'line') : theme.text);
       }
     }
     for (let c = c0; c <= c1 + 1; c++) {
-      const x = m.x(c) - 1 / dpr;
+      const x = X(c) - 1 / dpr;
       for (let r = r0; r <= r1; r++) {
         const left = c > 0 ? info(r, c - 1)?.st.br : undefined;
         const right = info(r, c)?.st.bl;
@@ -669,7 +683,7 @@ export function renderGrid(inp: RenderInput): void {
         if (!b) continue;
         const inside = covered.get(cellKey(r, c));
         if (inside && inside.c1 < c && covered.get(cellKey(r, c - 1)) === inside) continue;
-        strokeBorder(ctx, b, x, m.y(r) - 1 / dpr, x, m.y(r + 1) - 1 / dpr, dpr, theme.text);
+        strokeBorder(ctx, b, x, Y(r) - 1 / dpr, x, Y(r + 1) - 1 / dpr, dpr, b.color ? tone(b.color, 'line') : theme.text);
       }
     }
 
@@ -677,8 +691,8 @@ export function renderGrid(inp: RenderInput): void {
     const af = sheet.filter;
     if (af && af.range.r1 >= r0 && af.range.r1 <= r1) {
       for (let c = Math.max(af.range.c1, c0); c <= Math.min(af.range.c2, c1); c++) {
-        const bx = m.x(c + 1) - 17 * z;
-        const by = m.y(af.range.r1) + (m.y(af.range.r1 + 1) - m.y(af.range.r1) - 15 * z) / 2;
+        const bx = X(c + 1) - 17 * z;
+        const by = Y(af.range.r1) + (Y(af.range.r1 + 1) - Y(af.range.r1) - 15 * z) / 2;
         const active = !!af.columns[c - af.range.c1];
         drawFilterButton(ctx, bx, by, 15 * z, active, theme);
       }
@@ -709,6 +723,85 @@ export function renderGrid(inp: RenderInput): void {
 
   if (sheet.view.showHeaders) drawHeaders(ctx, m, sheet, ov, theme, dpr, rowsSets, colsSets, geo, vp);
   ctx.restore();
+}
+
+/* ============================================================ dark tones */
+
+const toneCache = new Map<string, string>();
+
+/**
+ * Display-only colour mapping for dark mode: light fills turn dark and dark text turns light while
+ * keeping hue and saturation, so sheets made in light mode stay readable. Files keep their colours.
+ */
+function darkTone(color: string, kind: 'fill' | 'text' | 'line'): string {
+  const key = kind + color;
+  const hit = toneCache.get(key);
+  if (hit) return hit;
+  const rgb = parseColor(color);
+  let out = color;
+  if (rgb) {
+    const [h, s, l] = rgbToHsl(rgb[0], rgb[1], rgb[2]);
+    let l2 = l;
+    if (kind === 'fill' && l > 0.5) l2 = 0.08 + (1 - l) * 0.85;
+    else if (kind === 'text' && l < 0.5) l2 = 1 - l;
+    else if (kind === 'line') l2 = Math.min(1, Math.max(0.3, 1 - l));
+    if (l2 !== l) {
+      const [r, g, b] = hslToRgb(h, s, l2);
+      out = rgb[3] < 1 ? `rgba(${r},${g},${b},${rgb[3]})` : `rgb(${r},${g},${b})`;
+    }
+  }
+  if (toneCache.size > 4000) toneCache.clear();
+  toneCache.set(key, out);
+  return out;
+}
+
+function parseColor(c: string): [number, number, number, number] | null {
+  const hex = /^#([0-9a-f]{3,8})$/i.exec(c.trim());
+  if (hex) {
+    let h = hex[1];
+    if (h.length === 3 || h.length === 4) h = [...h].map((x) => x + x).join('');
+    if (h.length !== 6 && h.length !== 8) return null;
+    const n = (i: number) => parseInt(h.slice(i, i + 2), 16);
+    return [n(0), n(2), n(4), h.length === 8 ? n(6) / 255 : 1];
+  }
+  const fn = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)(?:[\s,/]+([\d.]+%?))?\s*\)$/i.exec(c.trim());
+  if (fn) {
+    const a = fn[4] === undefined ? 1 : fn[4].endsWith('%') ? parseFloat(fn[4]) / 100 : parseFloat(fn[4]);
+    return [+fn[1], +fn[2], +fn[3], a];
+  }
+  return null;
+}
+
+function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+  r /= 255;
+  g /= 255;
+  b /= 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l];
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  const h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [h / 6, s, l];
+}
+
+function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+  if (s === 0) {
+    const v = Math.round(l * 255);
+    return [v, v, v];
+  }
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const f = (t: number) => {
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  return [Math.round(f(h + 1 / 3) * 255), Math.round(f(h) * 255), Math.round(f(h - 1 / 3) * 255)];
 }
 
 function namedColor(c: string): string {

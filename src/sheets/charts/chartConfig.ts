@@ -201,26 +201,31 @@ export function buildChartConfig(doc: SheetDoc, spec: ChartSpec, home: Sheet, da
   const legend = spec.legend ?? (data.series.length > 1 || pie ? 'bottom' : 'none');
   const horizontal = spec.type === 'bar';
   const axisTitle = (t?: string) => (t ? { display: true, text: t, color: text, font: { size: 12, weight: 600 } } : { display: false });
+  const xy = spec.type === 'scatter' || spec.type === 'bubble';
+  // category axis and value axis; a horizontal bar chart swaps which one is x
+  const catAxis: Record<string, unknown> = {
+    stacked: stacked && spec.type !== 'line',
+    grid: { color: grid, display: false },
+    ticks: { color: text, maxRotation: 45, autoSkip: true },
+    title: axisTitle(spec.xTitle),
+    ...(xy ? { type: 'linear', grid: { color: grid, display: spec.gridlines !== false } } : {}),
+  };
+  const valAxis: Record<string, unknown> = {
+    stacked,
+    grid: { color: grid, display: spec.gridlines !== false },
+    ticks: { color: text },
+    beginAtZero: !xy,
+    title: axisTitle(spec.yTitle),
+    ...(xy ? { type: 'linear' } : {}),
+    ...(percent ? { max: 100 } : {}),
+  };
   const scales: Record<string, unknown> = pie || spec.type === 'radar'
     ? spec.type === 'radar'
       ? { r: { grid: { color: grid }, angleLines: { color: grid }, pointLabels: { color: text }, ticks: { color: text, backdropColor: 'transparent' } } }
       : {}
     : {
-        x: {
-          stacked: stacked && spec.type !== 'line',
-          grid: { color: horizontal ? grid : 'transparent', display: spec.gridlines !== false || horizontal },
-          ticks: { color: text, maxRotation: 45, autoSkip: true },
-          type: spec.type === 'scatter' || spec.type === 'bubble' ? 'linear' : undefined,
-          title: axisTitle(horizontal ? spec.yTitle : spec.xTitle),
-        },
-        y: {
-          stacked: stacked,
-          grid: { color: horizontal ? 'transparent' : grid, display: spec.gridlines !== false },
-          ticks: { color: text },
-          beginAtZero: spec.type !== 'scatter' && spec.type !== 'bubble',
-          title: axisTitle(horizontal ? spec.xTitle : spec.yTitle),
-          ...(percent ? { max: 100 } : {}),
-        },
+        x: horizontal ? valAxis : catAxis,
+        y: horizontal ? catAxis : valAxis,
         ...(spec.type === 'combo' && data.series.length === 2 ? { y2: { position: 'right', grid: { display: false }, ticks: { color: text } } } : {}),
       };
   if (percent && !pie) {

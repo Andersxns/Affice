@@ -395,8 +395,12 @@ export async function importXlsx(bytes: Uint8Array): Promise<{ wb: Workbook; war
         const sid = Object.keys(st).length ? wb.styleId(st) : 0;
         if (sid) out.s = sid;
         const model = cell.model ?? {};
-        const formula: string | undefined = cell.formula ?? model.formula;
-        if (formula) {
+        // cells covered by a merge report the merge's value; they only keep their own formatting
+        const covered = cell.isMerged && cell.master && cell.master.address !== cell.address;
+        const formula: string | undefined = covered ? undefined : (cell.formula ?? model.formula);
+        if (covered) {
+          // formatting only
+        } else if (formula) {
           out.f = fromExcelFormula(String(formula));
           const res = scalarOf(model.result ?? cell.result);
           if (res !== undefined) out.v = res;
