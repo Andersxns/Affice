@@ -370,6 +370,19 @@ const PH_TYPES = new Set<string>(['title', 'ctrTitle', 'subTitle', 'body', 'obj'
 const LAYOUT_TYPES = new Set<string>(['title', 'obj', 'secHead', 'twoObj', 'twoTxTwoObj', 'titleOnly', 'blank', 'objTx', 'picTx', 'cust']);
 const DASHES = new Set<string>(['dash', 'dot', 'dashDot', 'longDash', 'sysDash', 'sysDot']);
 
+/** PowerPoint's layout names (kept by LibreOffice when it converts .pptx files) and their layout types. */
+const LAYOUT_NAMES: [RegExp, LayoutType][] = [
+  [/^title slide$/i, 'title'],
+  [/^title,? and content$|^title, content$/i, 'obj'],
+  [/^section header$/i, 'secHead'],
+  [/^two content$/i, 'twoObj'],
+  [/^comparison$/i, 'twoTxTwoObj'],
+  [/^title only$/i, 'titleOnly'],
+  [/^blank$/i, 'blank'],
+  [/^content with caption$/i, 'objTx'],
+  [/^picture with caption$/i, 'picTx'],
+];
+
 /** Well-known ODF shape types drawn by the matching preset when a file leaves out their outline. */
 const ODF_PRESET: Record<string, string> = {
   rectangle: 'rect',
@@ -2234,13 +2247,23 @@ export async function importOdp(bytes: Uint8Array): Promise<LoadedPresentation> 
       else decor.push(el);
     }
     const typeAttr = at(m, NS.affice, 'layout-type');
+    const named = LAYOUT_NAMES.find(([re]) => re.test(display.trim()))?.[1];
+    if (named === 'title' && !typeAttr) {
+      // a title slide converted from PowerPoint keeps only title and outline frames on its master: they are its title and subtitle
+      const t = placeholders.find((p) => p.ph === 'title');
+      const sub = placeholders.find((p) => p.ph === 'obj' || p.ph === 'body');
+      if (t) t.ph = 'ctrTitle';
+      if (sub && !placeholders.some((p) => p.ph === 'subTitle')) sub.ph = 'subTitle';
+    }
     const phKinds = placeholders.map((p) => p.ph);
     const titles = phKinds.filter((k) => k === 'title' || k === 'ctrTitle').length;
     const outlines = phKinds.filter((k) => k === 'obj' || k === 'body').length;
     const type: LayoutType =
       typeAttr && LAYOUT_TYPES.has(typeAttr)
         ? (typeAttr as LayoutType)
-        : !phKinds.length
+        : named
+          ? named
+          : !phKinds.length
           ? 'blank'
           : phKinds.includes('subTitle')
             ? 'title'

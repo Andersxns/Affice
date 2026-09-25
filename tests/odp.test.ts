@@ -301,12 +301,12 @@ const LO_BODY = `<office:body><office:presentation>
 </draw:page>
 </office:presentation></office:body>`;
 
-function loPackage(): Uint8Array {
+function loPackage(master = LO_MASTER, body = LO_BODY): Uint8Array {
   const head = `<?xml version="1.0" encoding="UTF-8"?>`;
   const files: Record<string, Uint8Array | [Uint8Array, { level: 0 }]> = {
     mimetype: [strToU8('application/vnd.oasis.opendocument.presentation'), { level: 0 }],
-    'content.xml': strToU8(`${head}<office:document-content ${NS} office:version="1.3">${LO_CONTENT_STYLES}${LO_BODY}</office:document-content>`),
-    'styles.xml': strToU8(`${head}<office:document-styles ${NS} office:version="1.3">${LO_STYLES}${LO_AUTO_STYLES}${LO_MASTER}</office:document-styles>`),
+    'content.xml': strToU8(`${head}<office:document-content ${NS} office:version="1.3">${LO_CONTENT_STYLES}${body}</office:document-content>`),
+    'styles.xml': strToU8(`${head}<office:document-styles ${NS} office:version="1.3">${LO_STYLES}${LO_AUTO_STYLES}${master}</office:document-styles>`),
     'meta.xml': strToU8(`${head}<office:document-meta ${NS}><office:meta><meta:generator>LibreOffice/24.2.7.2$Linux_X86_64</meta:generator><dc:title>Q3 review</dc:title><meta:initial-creator>Sam</meta:initial-creator></office:meta></office:document-meta>`),
     'Pictures/pixel.png': Uint8Array.from(atob(PIXEL), (c) => c.charCodeAt(0)),
   };
@@ -405,6 +405,23 @@ describe('ODP reader', () => {
     const flat = `<?xml version="1.0" encoding="UTF-8"?><office:document ${NS} office:version="1.3" office:mimetype="application/vnd.oasis.opendocument.presentation"><office:meta><meta:generator>LibreOffice/24.2.7.2$Linux_X86_64</meta:generator><dc:title>Q3 review</dc:title><meta:initial-creator>Sam</meta:initial-creator></office:meta>${LO_STYLES}${LO_AUTO_STYLES.replace('</office:automatic-styles>', '')}${LO_CONTENT_STYLES.replace('<office:automatic-styles>', '')}${LO_MASTER}${LO_BODY.replace('xlink:href="Pictures/pixel.png" xlink:type="simple" xlink:show="embed" xlink:actuate="onLoad"/>', `><office:binary-data>${PIXEL}</office:binary-data></draw:image>`)}</office:document>`;
     const { pres } = await importOdp(strToU8(flat));
     checkLoFixture(pres);
+  });
+
+  it('recognises the PowerPoint layout names LibreOffice keeps on converted masters', async () => {
+    const layoutOf = async (display: string) => {
+      const master = LO_MASTER.replace('style:name="Default"', `style:name="M1" style:display-name="${display}"`);
+      const { pres } = await importOdp(loPackage(master, LO_BODY.replaceAll('draw:master-page-name="Default"', 'draw:master-page-name="M1"')));
+      return pres.layouts[0];
+    };
+    const title = await layoutOf('Title Slide');
+    expect(title.type).toBe('title');
+    expect(title.placeholders.map((x) => x.ph)).toEqual(['ctrTitle', 'subTitle']);
+    expect((await layoutOf('Title Only')).type).toBe('titleOnly');
+    expect((await layoutOf('Section Header')).type).toBe('secHead');
+    // other names keep the type the placeholders suggest
+    const other = await layoutOf('Ocean');
+    expect(other.type).toBe('obj');
+    expect(other.placeholders.map((x) => x.ph)).toEqual(['title', 'obj']);
   });
 
   it('rejects files that are not presentations', async () => {
