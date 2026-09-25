@@ -4,7 +4,7 @@
  * workbook), transitions and animations using PowerPoint's own presets.
  */
 import { zipSync, strToU8 } from 'fflate';
-import { base64ToBytes, escapeXml as x } from '@/lib/utils';
+import { escapeXml as x } from '@/lib/utils';
 import { DEFAULT_ADJ, isConnector } from '../geometry';
 import {
   parseColorRef,
@@ -29,6 +29,7 @@ import {
 import { effectivePara, effectiveRun, roleOf, type TextContext } from '../render/text';
 import { cellLook, tableStyleId } from '../tables';
 import { buildOf } from '../show/engine';
+import { decodeImage as decode, rasterizeImage as rasterize } from './media';
 import { chartSpaceXml, chartWorkbook } from './pptx-charts';
 
 const EMU = 9525;
@@ -105,56 +106,6 @@ class Media {
     const path = `ppt/media/image${this.files.length + 1}.${ext}`;
     this.files.push({ path, data, ext });
     return path;
-  }
-}
-
-async function decode(src: string): Promise<{ data: Uint8Array; ext: string } | null> {
-  const m = /^data:([^;,]+)(;charset=[^;,]+)?(;base64)?,(.*)$/s.exec(src);
-  if (!m) {
-    try {
-      const r = await fetch(src);
-      const b = new Uint8Array(await r.arrayBuffer());
-      return { data: b, ext: extOf(r.headers.get('content-type') ?? 'image/png') };
-    } catch {
-      return null;
-    }
-  }
-  const mime = m[1];
-  const data = m[3] ? base64ToBytes(m[4]) : strToU8(decodeURIComponent(m[4]));
-  const ext = extOf(mime);
-  if (['png', 'jpeg', 'gif', 'bmp', 'svg', 'tiff'].includes(ext)) return { data, ext: ext === 'jpeg' ? 'jpeg' : ext };
-  // formats PowerPoint can't read (webp, avif…) become PNG
-  const png = await rasterize(src);
-  return png ? { data: png, ext: 'png' } : null;
-}
-
-function extOf(mime: string): string {
-  const m = mime.toLowerCase();
-  if (m.includes('png')) return 'png';
-  if (m.includes('jpeg') || m.includes('jpg')) return 'jpeg';
-  if (m.includes('gif')) return 'gif';
-  if (m.includes('svg')) return 'svg';
-  if (m.includes('bmp')) return 'bmp';
-  if (m.includes('tif')) return 'tiff';
-  if (m.includes('webp')) return 'webp';
-  return 'png';
-}
-
-async function rasterize(src: string, w?: number, h?: number): Promise<Uint8Array | null> {
-  try {
-    const img = new Image();
-    img.src = src;
-    await img.decode();
-    const cw = w ?? img.naturalWidth ?? 512;
-    const ch = h ?? img.naturalHeight ?? 512;
-    const c = document.createElement('canvas');
-    c.width = Math.max(1, Math.round(cw));
-    c.height = Math.max(1, Math.round(ch));
-    c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height);
-    const blob = await new Promise<Blob | null>((r) => c.toBlob(r, 'image/png'));
-    return blob ? new Uint8Array(await blob.arrayBuffer()) : null;
-  } catch {
-    return null;
   }
 }
 

@@ -31,6 +31,10 @@ export async function loadPresentation(source: TabSource | undefined): Promise<L
   switch (formatId) {
     case 'afslides':
       return { pres: parseAfslides(file.data) };
+    case 'odp': {
+      const { importOdp } = await import('./odp-import');
+      return importOdp(file.data);
+    }
     default: {
       const { importPptx } = await import('./pptx-import');
       return importPptx(file.data);
@@ -45,6 +49,10 @@ export async function exportPresentation(pres: Presentation, formatId: string, t
     case 'pptx': {
       const { exportPptx } = await import('./pptx-export');
       return exportPptx(pres);
+    }
+    case 'odp': {
+      const { exportOdp } = await import('./odp-export');
+      return exportOdp(pres);
     }
     case 'md': {
       const { outlineMarkdown } = await import('./outline');

@@ -44,7 +44,9 @@ export async function saveDocument(o: SaveOptions): Promise<boolean> {
   const tab = getTab(o.tabId);
   if (!tab) return false;
   const current = tab.format ? formatById(tab.format) : undefined;
-  const canWriteCurrent = Boolean(tab.path && current && current.save !== 'none' && (current.save === 'native' || current.save === 'libreoffice'));
+  // templates, flat files and macro-enabled variants are saved as a new file rather than overwritten in another format
+  const inPlace = !tab.path || !current || (current.saveExts ?? current.exts).includes(extname(tab.path));
+  const canWriteCurrent = Boolean(tab.path && current && inPlace && current.save !== 'none' && (current.save === 'native' || current.save === 'libreoffice'));
 
   let path = tab.path;
   let formatId = tab.format;

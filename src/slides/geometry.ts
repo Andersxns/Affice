@@ -694,6 +694,21 @@ export function presetGeometry(geom: string, w: number, h: number, adjIn?: Recor
   }
 }
 
+const RECT_PROBE = presetGeometry('rect', 100, 60).paths[0].d;
+const known = new Map<string, boolean>();
+
+/** Whether a preset has geometry of its own here (unknown presets draw as plain rectangles). */
+export function isKnownPreset(geom: string): boolean {
+  if (geom === 'rect' || geom === 'textBox' || geom === 'flowChartProcess') return true;
+  let hit = known.get(geom);
+  if (hit === undefined) {
+    const g = presetGeometry(geom, 100, 60);
+    hit = g.paths.length !== 1 || g.paths[0].d !== RECT_PROBE;
+    known.set(geom, hit);
+  }
+  return hit;
+}
+
 function flipX(d: string, w: number): string {
   // mirrors absolute path coordinates horizontally (M/L/A/C/Q with absolute numbers)
   return d.replace(/([MLCQ])([^MLCQAZ]*)|A([^MLCQAZ]*)/g, (_m, cmd: string | undefined, args: string | undefined, arcArgs: string | undefined) => {

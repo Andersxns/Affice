@@ -40,7 +40,7 @@ Get the latest version from the [**Releases page**](https://github.com/andersxns
 | `Affice-Setup-<version>-arm64.exe` | Installer for Windows on ARM (Surface Pro X, Snapdragon laptops…). |
 | `Affice-Portable-<version>-x64.exe` | Runs without installing, from a folder or USB stick. |
 
-The installer lets you choose where Affice goes and whether it is installed just for you (no administrator rights needed) or for everyone. It adds Start menu and desktop shortcuts and lets Affice open `.docx`, `.xlsx`, `.pptx`, `.odt`, `.ods` and the other supported files. The installers aren't code-signed yet, so Windows SmartScreen may warn you the first time; choose **More info → Run anyway**.
+The installer lets you choose where Affice goes and whether it is installed just for you (no administrator rights needed) or for everyone. It adds Start menu and desktop shortcuts and lets Affice open `.docx`, `.xlsx`, `.pptx`, `.odt`, `.ods`, `.odp` and the other supported files. The installers aren't code-signed yet, so Windows SmartScreen may warn you the first time; choose **More info → Run anyway**.
 
 ### Linux
 
@@ -55,7 +55,7 @@ Affice runs on current 64-bit distributions (for example Ubuntu 20.04, Debian 11
 
 ### Optional: LibreOffice for very old formats
 
-Affice reads and writes Word, Excel, PowerPoint, OpenDocument, RTF and many other formats itself. For a few legacy formats it hands the conversion to [LibreOffice](https://www.libreoffice.org/) if it is installed: saving `.doc`, opening and saving `.ppt` and `.odp`, and opening Keynote, Pages, WordPerfect and similar files. Everything else works without it.
+Affice reads and writes Word, Excel, PowerPoint, OpenDocument, RTF and many other formats itself. For a few legacy formats it hands the conversion to [LibreOffice](https://www.libreoffice.org/) if it is installed: saving `.doc`, opening and saving `.ppt`, and opening Keynote, Pages, WordPerfect and similar files. Everything else works without it.
 
 ## What's inside
 
@@ -119,7 +119,7 @@ A home screen to start a blank document, spreadsheet or presentation, choose fro
 | --- | --- | --- | --- |
 | **Documents** | `.docx` `.docm` `.dotx` `.odt` `.ott` `.rtf` `.doc` `.html` `.md` `.txt` `.afdoc` (+ WordPerfect, Pages and more with LibreOffice) | `.docx` `.odt` `.rtf` `.afdoc` (`.doc` with LibreOffice) | PDF, HTML, Markdown, EPUB, plain text |
 | **Sheets** | `.xlsx` `.xlsm` `.xltx` `.xls` `.xlsb` `.ods` `.ots` `.fods` `.numbers` `.csv` `.tsv` `.afsheet` | `.xlsx` `.ods` `.xls` `.afsheet` | PDF, CSV, TSV, HTML, JSON, Markdown |
-| **Slides** | `.pptx` `.pptm` `.potx` `.ppsx` `.afslides` (+ `.ppt` `.odp` `.key` with LibreOffice) | `.pptx` `.afslides` (`.odp` with LibreOffice) | PDF, PNG (one slide or all), self-contained HTML slide show, Markdown outline |
+| **Slides** | `.pptx` `.pptm` `.potx` `.ppsx` `.odp` `.otp` `.fodp` `.afslides` (+ `.ppt` `.key` with LibreOffice) | `.pptx` `.odp` `.afslides` | PDF, PNG (one slide or all), self-contained HTML slide show, Markdown outline |
 
 The `.afdoc`, `.afsheet` and `.afslides` formats are Affice's own compressed JSON files. They keep every Affice feature exactly and are documented by the TypeScript types in `src/*/model`.
 

@@ -9,12 +9,14 @@ export interface FormatInfo {
   save: 'native' | 'libreoffice' | 'none';
   /** Shown before saving: what gets lost in this format. */
   lossy?: string;
+  /** Extensions that saving writes in place (others, like templates or flat files, go through Save As). */
+  saveExts?: string[];
 }
 
 export const FORMATS: FormatInfo[] = [
   // Documents
-  { id: 'docx', label: 'Word Document', exts: ['docx', 'docm', 'dotx', 'dotm'], kind: 'doc', open: 'native', save: 'native' },
-  { id: 'odt', label: 'OpenDocument Text', exts: ['odt', 'ott'], kind: 'doc', open: 'native', save: 'native' },
+  { id: 'docx', label: 'Word Document', exts: ['docx', 'docm', 'dotx', 'dotm'], kind: 'doc', open: 'native', save: 'native', saveExts: ['docx'] },
+  { id: 'odt', label: 'OpenDocument Text', exts: ['odt', 'ott'], kind: 'doc', open: 'native', save: 'native', saveExts: ['odt'] },
   { id: 'rtf', label: 'Rich Text Format', exts: ['rtf'], kind: 'doc', open: 'native', save: 'native' },
   { id: 'doc', label: 'Word 97-2003 Document', exts: ['doc', 'dot'], kind: 'doc', open: 'native', save: 'libreoffice' },
   { id: 'html', label: 'Web Page', exts: ['html', 'htm', 'xhtml'], kind: 'doc', open: 'native', save: 'native' },
@@ -23,18 +25,18 @@ export const FORMATS: FormatInfo[] = [
   { id: 'wpd', label: 'WordPerfect / Pages / other', exts: ['wpd', 'pages', 'wps', 'abw', 'fodt', 'sxw'], kind: 'doc', open: 'libreoffice', save: 'none' },
   { id: 'afdoc', label: 'Affice Document', exts: ['afdoc'], kind: 'doc', open: 'native', save: 'native' },
   // Sheets
-  { id: 'xlsx', label: 'Excel Workbook', exts: ['xlsx', 'xlsm', 'xltx', 'xltm'], kind: 'sheet', open: 'native', save: 'native' },
+  { id: 'xlsx', label: 'Excel Workbook', exts: ['xlsx', 'xlsm', 'xltx', 'xltm'], kind: 'sheet', open: 'native', save: 'native', saveExts: ['xlsx'] },
   { id: 'xls', label: 'Excel 97-2003 Workbook', exts: ['xls', 'xlt'], kind: 'sheet', open: 'native', save: 'native', lossy: 'The old .xls format has limited styling — some formatting may be simplified.' },
   { id: 'xlsb', label: 'Excel Binary Workbook', exts: ['xlsb'], kind: 'sheet', open: 'native', save: 'none' },
-  { id: 'ods', label: 'OpenDocument Spreadsheet', exts: ['ods', 'ots', 'fods'], kind: 'sheet', open: 'native', save: 'native' },
+  { id: 'ods', label: 'OpenDocument Spreadsheet', exts: ['ods', 'ots', 'fods'], kind: 'sheet', open: 'native', save: 'native', saveExts: ['ods'] },
   { id: 'numbers', label: 'Apple Numbers', exts: ['numbers'], kind: 'sheet', open: 'native', save: 'none' },
   { id: 'csv', label: 'CSV (Comma separated)', exts: ['csv'], kind: 'sheet', open: 'native', save: 'native', lossy: 'CSV saves only the values of the current sheet — formatting, formulas and other sheets are not saved.' },
   { id: 'tsv', label: 'Tab separated values', exts: ['tsv', 'tab'], kind: 'sheet', open: 'native', save: 'native', lossy: 'TSV saves only the values of the current sheet.' },
   { id: 'afsheet', label: 'Affice Sheet', exts: ['afsheet'], kind: 'sheet', open: 'native', save: 'native' },
   // Slides
-  { id: 'pptx', label: 'PowerPoint Presentation', exts: ['pptx', 'pptm', 'potx', 'ppsx', 'potm', 'ppsm'], kind: 'slides', open: 'native', save: 'native' },
+  { id: 'pptx', label: 'PowerPoint Presentation', exts: ['pptx', 'pptm', 'potx', 'ppsx', 'potm', 'ppsm'], kind: 'slides', open: 'native', save: 'native', saveExts: ['pptx'] },
   { id: 'ppt', label: 'PowerPoint 97-2003', exts: ['ppt', 'pps', 'pot'], kind: 'slides', open: 'libreoffice', save: 'libreoffice' },
-  { id: 'odp', label: 'OpenDocument Presentation', exts: ['odp', 'otp', 'fodp'], kind: 'slides', open: 'libreoffice', save: 'libreoffice' },
+  { id: 'odp', label: 'OpenDocument Presentation', exts: ['odp', 'otp', 'fodp'], kind: 'slides', open: 'native', save: 'native', saveExts: ['odp'] },
   { id: 'key', label: 'Apple Keynote', exts: ['key'], kind: 'slides', open: 'libreoffice', save: 'none' },
   { id: 'afslides', label: 'Affice Presentation', exts: ['afslides'], kind: 'slides', open: 'native', save: 'native' },
 ];
@@ -127,7 +129,7 @@ export const SHEET_EXPORT_TARGETS: ExportTarget[] = [
 
 export const SLIDES_SAVE_TARGETS: ExportTarget[] = [
   { id: 'pptx', label: 'PowerPoint Presentation', ext: 'pptx', description: 'Best for sharing with Microsoft PowerPoint users.' },
-  { id: 'odp', label: 'OpenDocument Presentation', ext: 'odp', description: 'For LibreOffice Impress (needs LibreOffice).', requiresLibreOffice: true },
+  { id: 'odp', label: 'OpenDocument Presentation', ext: 'odp', description: 'Open standard used by LibreOffice Impress and others.' },
   { id: 'afslides', label: 'Affice Presentation', ext: 'afslides', description: 'Keeps every Affice feature exactly (animations…).' },
 ];
 

@@ -198,7 +198,8 @@ const ShapeView = memo(function ShapeView({ e, rc }: { e: ShapeEl; rc: RenderCtx
   return (
     <div className={`sl-el sl-shape${e.ph ? ' sl-ph' : ''}${prompt ? ' sl-ph-empty' : ''}${lineLike ? ' is-line' : ''}`} data-el={e.id} style={frameStyle(e)}>
       {(fill?.type !== 'none' || stroke !== 'none') && (
-        <svg className="sl-geom" width={e.w} height={e.h} viewBox={`0 0 ${Math.max(e.w, 0.01)} ${Math.max(e.h, 0.01)}`} style={{ transform: flip, filter: shadowFilter(e.shadow, theme) }} aria-hidden>
+        // at least 1 px each way: a zero-height (horizontal) or zero-width (vertical) line would otherwise scale to nothing
+        <svg className="sl-geom" width={Math.max(e.w, 1)} height={Math.max(e.h, 1)} viewBox={`0 0 ${Math.max(e.w, 1)} ${Math.max(e.h, 1)}`} style={{ transform: flip, filter: shadowFilter(e.shadow, theme) }} aria-hidden>
           {uniqueDefs.length > 0 && <defs>{uniqueDefs}</defs>}
           {g.paths.map((p, i) => (
             <path
