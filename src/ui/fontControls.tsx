@@ -4,23 +4,44 @@ import { ComboBox, type ComboOption } from './controls';
 
 const GROUP_LABEL = { office: 'Office-compatible', bundled: 'Affice fonts', system: 'Installed on this computer' } as const;
 
-export function FontFamilyCombo({ value, onChange, width = 150 }: { value: string; onChange: (f: string) => void; width?: number }) {
+/** Presentation theme fonts, offered as "+major" (headings) and "+minor" (body) at the top of the list. */
+export interface ThemeFonts {
+  major: string;
+  minor: string;
+}
+
+export function themeFontLabel(value: string, theme: ThemeFonts): string {
+  if (value === '+major') return `${theme.major} (Headings)`;
+  if (value === '+minor') return `${theme.minor} (Body)`;
+  return value;
+}
+
+export function FontFamilyCombo({ value, onChange, width = 150, theme }: { value: string; onChange: (f: string) => void; width?: number; theme?: ThemeFonts }) {
   const [, force] = useState(0);
   useEffect(() => {
     void loadSystemFonts().then(() => force((n) => n + 1));
   }, []);
-  const options = (): ComboOption[] =>
-    allFontOptions().map((f) => ({
+  const options = (): ComboOption[] => [
+    ...(theme
+      ? (['+major', '+minor'] as const).map((v) => ({
+          value: v,
+          label: themeFontLabel(v, theme),
+          group: 'Theme fonts',
+          style: { fontFamily: `"${v === '+major' ? theme.major : theme.minor}", sans-serif`, fontSize: 14 },
+        }))
+      : []),
+    ...allFontOptions().map((f) => ({
       value: f.name,
       group: GROUP_LABEL[f.source],
       style: { fontFamily: `"${f.name}", sans-serif`, fontSize: 14 },
       hint: f.source === 'office' ? 'metric-compatible' : undefined,
-    }));
+    })),
+  ];
   return (
     <ComboBox
-      value={value}
+      value={theme ? themeFontLabel(value, theme) : value}
       options={options}
-      onCommit={onChange}
+      onCommit={(v) => onChange(theme && v === themeFontLabel('+major', theme) ? '+major' : theme && v === themeFontLabel('+minor', theme) ? '+minor' : v)}
       width={width}
       label="Font"
       listWidth={300}

@@ -758,29 +758,6 @@
 }
 
 /* ================================================================ dialogs */
-.dlg-tabs {
-  display: flex;
-  gap: 2px;
-  border-bottom: 1px solid var(--border);
-  margin: -4px 0 12px;
-}
-.dlg-tab {
-  border: 0;
-  background: transparent;
-  padding: 8px 12px;
-  font-size: 13px;
-  color: var(--text-2);
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-}
-.dlg-tab:hover {
-  color: var(--text);
-}
-.dlg-tab.active {
-  color: var(--grid-header-sel-fg);
-  border-bottom-color: var(--grid-accent);
-  font-weight: 600;
-}
 .dlg-tab-body {
   min-height: 300px;
 }

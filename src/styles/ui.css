@@ -1013,3 +1013,61 @@ textarea::placeholder {
   flex: none;
   object-fit: contain;
 }
+
+/* ------------------------------------------------------------ dialog tabs */
+.dlg-tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+  margin: -4px 0 12px;
+  flex-wrap: wrap;
+}
+.dlg-tab {
+  border: 0;
+  background: transparent;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text-2);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.dlg-tab:hover {
+  color: var(--text);
+}
+.dlg-tab.active {
+  color: var(--accent-text);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+/* -------------------------------------------------------------- utilities */
+.gap-4 {
+  gap: 4px;
+}
+.gap-6 {
+  gap: 6px;
+}
+.gap-8 {
+  gap: 8px;
+}
+.stack-10 {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.input-icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.input-icon > svg {
+  position: absolute;
+  left: 9px;
+  color: var(--text-3);
+  pointer-events: none;
+}
+.input-icon > .input {
+  padding-left: 30px;
+  width: 100%;
+}

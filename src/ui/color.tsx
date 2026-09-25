@@ -112,17 +112,29 @@ const useRecentColors = create<{ colors: string[]; add(c: string): void }>((set)
 
 /* ------------------------------------------------------------------ picker */
 
+export interface ThemeSwatch {
+  /** CSS colour shown on the swatch. */
+  color: string;
+  /** Value passed to onPick (a colour or a theme reference). */
+  value: string;
+  title: string;
+}
+
 export interface ColorPickerProps {
   value?: string | null;
   onPick: (color: string | null) => void;
   noneLabel?: string;
   palette?: 'theme' | 'highlight';
   themeColors?: string[];
+  /** Theme swatch grid that picks references instead of fixed colours (Slides). */
+  themeSwatches?: ThemeSwatch[][];
+  /** Turns a picked value into a CSS colour (for theme references). */
+  display?: (value: string) => string;
 }
 
-export function ColorPicker({ value, onPick, noneLabel, palette = 'theme', themeColors }: ColorPickerProps) {
+export function ColorPicker({ value, onPick, noneLabel, palette = 'theme', themeColors, themeSwatches, display = (v) => v }: ColorPickerProps) {
   const recent = useRecentColors();
-  const [custom, setCustom] = useState(value ?? '#004fff');
+  const [custom, setCustom] = useState(value && value.startsWith('#') ? value : '#004fff');
   const pick = (c: string | null) => {
     if (c) recent.add(c);
     onPick(c);
@@ -138,16 +150,17 @@ export function ColorPicker({ value, onPick, noneLabel, palette = 'theme', theme
       /* cancelled */
     }
   };
-  const sw = (c: string, key: string, title?: string) => (
+  const sw = (c: string, key: string, title?: string, v: string = c) => (
     <button
       key={key}
       type="button"
-      className={`swatch${value && value.toLowerCase() === c.toLowerCase() ? ' selected' : ''}`}
+      className={`swatch${value && value.toLowerCase() === v.toLowerCase() ? ' selected' : ''}`}
       style={{ background: c }}
       title={title ?? c.toUpperCase()}
-      onClick={() => pick(c)}
+      onClick={() => pick(v)}
     />
   );
+  const grid: ThemeSwatch[][] = themeSwatches ?? themeGrid(themeColors).map((row) => row.map((c) => ({ color: c, value: c, title: c.toUpperCase() })));
   return (
     <div className="color-picker" onMouseDown={(e) => e.target instanceof HTMLInputElement || e.preventDefault()}>
       {noneLabel && (
@@ -161,9 +174,9 @@ export function ColorPicker({ value, onPick, noneLabel, palette = 'theme', theme
         <>
           <div className="color-section">Theme colours</div>
           <div className="swatch-theme">
-            {themeGrid(themeColors).map((row, r) => (
+            {grid.map((row, r) => (
               <div key={r} className={`swatch-row${r === 0 ? ' base' : ''}`}>
-                {row.map((c, i) => sw(c, `${r}-${i}`))}
+                {row.map((c, i) => sw(c.color, `${r}-${i}`, c.title, c.value))}
               </div>
             ))}
           </div>
@@ -174,7 +187,7 @@ export function ColorPicker({ value, onPick, noneLabel, palette = 'theme', theme
       {recent.colors.length > 0 && (
         <>
           <div className="color-section">Recent</div>
-          <div className="swatch-row">{recent.colors.map((c, i) => sw(c, `r${i}`))}</div>
+          <div className="swatch-row">{recent.colors.map((c, i) => sw(display(c), `r${i}`, undefined, c))}</div>
         </>
       )}
       <div className="color-custom">
@@ -218,6 +231,9 @@ export function ColorSplitButton({
   palette,
   big,
   label,
+  themeSwatches,
+  display = (v: string) => v,
+  extra,
 }: {
   icon: ReactNode;
   color: string | null;
@@ -227,6 +243,10 @@ export function ColorSplitButton({
   palette?: 'theme' | 'highlight';
   big?: boolean;
   label?: string;
+  themeSwatches?: ThemeSwatch[][];
+  display?: (value: string) => string;
+  /** Extra content under the picker (e.g. "More fill options…"). */
+  extra?: (close: () => void) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
@@ -236,7 +256,7 @@ export function ColorSplitButton({
       <button type="button" className="split-main" data-tip={tip} onMouseDown={(e) => e.preventDefault()} onClick={() => onApply(current)}>
         <span className="color-split-icon">
           {icon}
-          <span className="color-bar" style={{ background: current ?? 'transparent', borderColor: current ? current : 'var(--border-strong)' }} />
+          <span className="color-bar" style={{ background: current ? display(current) : 'transparent', borderColor: current ? display(current) : 'var(--border-strong)' }} />
         </span>
         {label && <span className="split-label">{label}</span>}
       </button>
@@ -248,32 +268,54 @@ export function ColorSplitButton({
           value={current}
           palette={palette}
           noneLabel={noneLabel}
+          themeSwatches={themeSwatches}
+          display={display}
           onPick={(c) => {
             setCurrent(c);
             onApply(c);
             setOpen(false);
           }}
         />
+        {extra?.(() => setOpen(false))}
       </Popover>
     </div>
   );
 }
 
 /** Button showing a colour swatch that opens a picker (for panels/dialogs). */
-export function ColorField({ value, onChange, noneLabel, label }: { value: string | null; onChange: (c: string | null) => void; noneLabel?: string; label?: string }) {
+export function ColorField({
+  value,
+  onChange,
+  noneLabel,
+  label,
+  themeSwatches,
+  display = (v: string) => v,
+  describe,
+}: {
+  value: string | null;
+  onChange: (c: string | null) => void;
+  noneLabel?: string;
+  label?: string;
+  themeSwatches?: ThemeSwatch[][];
+  display?: (value: string) => string;
+  /** Text shown for the current value (defaults to the hex code). */
+  describe?: (value: string) => string;
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
   return (
     <>
       <button ref={ref} type="button" className="color-field" aria-label={label} onClick={() => setOpen((o) => !o)}>
-        <span className={`color-field-swatch${value ? '' : ' none'}`} style={{ background: value ?? undefined }} />
-        <span className="color-field-text">{value ? value.toUpperCase() : (noneLabel ?? 'None')}</span>
+        <span className={`color-field-swatch${value ? '' : ' none'}`} style={{ background: value ? display(value) : undefined }} />
+        <span className="color-field-text">{value ? (describe ? describe(value) : value.toUpperCase()) : (noneLabel ?? 'None')}</span>
         <ChevronDown size={13} />
       </button>
       <Popover open={open} anchor={ref.current} onClose={() => setOpen(false)} ignore={[ref.current]}>
         <ColorPicker
           value={value}
           noneLabel={noneLabel}
+          themeSwatches={themeSwatches}
+          display={display}
           onPick={(c) => {
             onChange(c);
             setOpen(false);
