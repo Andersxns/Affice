@@ -26,7 +26,7 @@ export const FORMATS: FormatInfo[] = [
   { id: 'xlsx', label: 'Excel Workbook', exts: ['xlsx', 'xlsm', 'xltx', 'xltm'], kind: 'sheet', open: 'native', save: 'native' },
   { id: 'xls', label: 'Excel 97-2003 Workbook', exts: ['xls', 'xlt'], kind: 'sheet', open: 'native', save: 'native', lossy: 'The old .xls format has limited styling — some formatting may be simplified.' },
   { id: 'xlsb', label: 'Excel Binary Workbook', exts: ['xlsb'], kind: 'sheet', open: 'native', save: 'none' },
-  { id: 'ods', label: 'OpenDocument Spreadsheet', exts: ['ods', 'ots', 'fods'], kind: 'sheet', open: 'native', save: 'native', lossy: 'Charts are not saved in .ods files yet — everything else is kept.' },
+  { id: 'ods', label: 'OpenDocument Spreadsheet', exts: ['ods', 'ots', 'fods'], kind: 'sheet', open: 'native', save: 'native' },
   { id: 'numbers', label: 'Apple Numbers', exts: ['numbers'], kind: 'sheet', open: 'native', save: 'none' },
   { id: 'csv', label: 'CSV (Comma separated)', exts: ['csv'], kind: 'sheet', open: 'native', save: 'native', lossy: 'CSV saves only the values of the current sheet — formatting, formulas and other sheets are not saved.' },
   { id: 'tsv', label: 'Tab separated values', exts: ['tsv', 'tab'], kind: 'sheet', open: 'native', save: 'native', lossy: 'TSV saves only the values of the current sheet.' },

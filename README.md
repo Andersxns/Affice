@@ -118,7 +118,7 @@ A home screen to start a blank document, spreadsheet or presentation, choose fro
 | | Opens | Saves | Exports |
 | --- | --- | --- | --- |
 | **Documents** | `.docx` `.docm` `.dotx` `.odt` `.ott` `.rtf` `.doc` `.html` `.md` `.txt` `.afdoc` (+ WordPerfect, Pages and more with LibreOffice) | `.docx` `.odt` `.rtf` `.afdoc` (`.doc` with LibreOffice) | PDF, HTML, Markdown, EPUB, plain text |
-| **Sheets** | `.xlsx` `.xlsm` `.xltx` `.xls` `.xlsb` `.ods` `.fods` `.numbers` `.csv` `.tsv` `.afsheet` | `.xlsx` `.ods` `.xls` `.afsheet` | PDF, CSV, TSV, HTML, JSON, Markdown |
+| **Sheets** | `.xlsx` `.xlsm` `.xltx` `.xls` `.xlsb` `.ods` `.ots` `.fods` `.numbers` `.csv` `.tsv` `.afsheet` | `.xlsx` `.ods` `.xls` `.afsheet` | PDF, CSV, TSV, HTML, JSON, Markdown |
 | **Slides** | `.pptx` `.pptm` `.potx` `.ppsx` `.afslides` (+ `.ppt` `.odp` `.key` with LibreOffice) | `.pptx` `.afslides` (`.odp` with LibreOffice) | PDF, PNG (one slide or all), self-contained HTML slide show, Markdown outline |
 
 The `.afdoc`, `.afsheet` and `.afslides` formats are Affice's own compressed JSON files. They keep every Affice feature exactly and are documented by the TypeScript types in `src/*/model`.

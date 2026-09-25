@@ -266,6 +266,22 @@ export function fromOdsFormula(src: string): string {
   return out;
 }
 
+/** Splits a list of ODF range addresses at spaces outside quoted sheet names. */
+export function splitRangeList(list: string): string[] {
+  const out: string[] = [];
+  let cur = '';
+  let q = false;
+  for (const ch of list) {
+    if (ch === "'") q = !q;
+    if (/\s/.test(ch) && !q) {
+      if (cur) out.push(cur);
+      cur = '';
+    } else cur += ch;
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
 /** A cell range as an ODF range address ("Sheet1.A1:Sheet1.B5"), used by filters, conditional formats… */
 export function odsRangeAddress(sheet: string, r1: number, c1: number, r2: number, c2: number, abs = false): string {
   const sh = abs ? odsSheet(sheet) : odsSheet(sheet).slice(1);

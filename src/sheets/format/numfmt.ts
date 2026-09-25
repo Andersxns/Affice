@@ -360,12 +360,32 @@ function approxFraction(x: number, maxDen: number): [number, number] {
   return [bestN / g, bestD / g];
 }
 
-function formatNumberSection(sec: FormatSection, value: number, negSection: boolean): string {
-  const toks = sec.toks;
-  let v = value;
-  const percents = toks.filter((t) => t.t === 'percent').length;
-  v *= Math.pow(100, percents);
+/** What a number section needs to know about its placeholders, worked out once per format. */
+interface NumberPlan {
+  percents: number;
+  pointIdx: number;
+  expIdx: number;
+  slashIdx: number;
+  intEnd: number;
+  scale: number;
+  hasThousands: boolean;
+  /** Integer placeholders before the exponent (scientific formats). */
+  expIntDigits: number;
+  decimals: number;
+  intToks: { t: FormatTok; i: number }[];
+  contiguous: boolean;
+  zeros: number;
+  qs: number;
+  decIdx: { t: FormatTok; i: number }[];
+}
 
+const plans = new WeakMap<FormatSection, NumberPlan>();
+
+function numberPlan(sec: FormatSection): NumberPlan {
+  let plan = plans.get(sec);
+  if (plan) return plan;
+  const toks = sec.toks;
+  const percents = toks.filter((t) => t.t === 'percent').length;
   // scaling: commas right after the last digit placeholder divide by 1000 each ("0,," or "0.0,,")
   let lastDigit = -1;
   const pointIdx = toks.findIndex((t) => t.t === 'point');
@@ -376,10 +396,33 @@ function formatNumberSection(sec: FormatSection, value: number, negSection: bool
   for (let i = 0; i < numEnd; i++) if (toks[i].t === 'digit') lastDigit = i;
   let scale = 0;
   for (let i = lastDigit + 1; i < numEnd && toks[i]?.t === 'comma'; i++) scale++;
-  v /= Math.pow(1000, scale);
   let lastIntDigit = -1;
   for (let i = 0; i < intEnd; i++) if (toks[i].t === 'digit') lastIntDigit = i;
   const hasThousands = toks.some((t, i) => t.t === 'comma' && i < lastIntDigit && toks.slice(0, i).some((x) => x.t === 'digit'));
+  const expIntDigits = toks.slice(0, pointIdx >= 0 ? pointIdx : expIdx).filter((t) => t.t === 'digit').length || 1;
+  const decimals = pointIdx >= 0 ? toks.slice(pointIdx + 1, expIdx >= 0 ? expIdx : toks.length).filter((t) => t.t === 'digit').length : 0;
+  const intToks = toks
+    .slice(0, intEnd)
+    .map((t, i) => ({ t, i }))
+    .filter((x) => x.t.t === 'digit');
+  const contiguous = intToks.length > 0 && intToks.every((x, j) => j === 0 || toks.slice(intToks[j - 1].i + 1, x.i).every((t) => t.t === 'comma'));
+  const zeros = intToks.filter((x) => (x.t as { v: string }).v === '0').length;
+  const qs = intToks.filter((x) => (x.t as { v: string }).v === '?').length;
+  const decIdx = pointIdx >= 0 ? toks.map((t, i) => ({ t, i })).filter((x) => x.i > pointIdx && (expIdx < 0 || x.i < expIdx) && x.t.t === 'digit') : [];
+  plan = { percents, pointIdx, expIdx, slashIdx, intEnd, scale, hasThousands, expIntDigits, decimals, intToks, contiguous, zeros, qs, decIdx };
+  plans.set(sec, plan);
+  return plan;
+}
+
+/** Digits of a whole number without exponent notation. */
+const integerDigits = (n: number) => (n < 1e21 ? String(n) : BigInt(n).toString());
+
+function formatNumberSection(sec: FormatSection, value: number, negSection: boolean): string {
+  const toks = sec.toks;
+  const { percents, pointIdx, expIdx, slashIdx, scale, hasThousands, expIntDigits, decimals, intToks, contiguous, zeros, qs, decIdx } = numberPlan(sec);
+  let v = value;
+  if (percents) v *= Math.pow(100, percents);
+  if (scale) v /= Math.pow(1000, scale);
 
   const neg = v < 0 && !negSection;
   let abs = Math.abs(v);
@@ -435,7 +478,7 @@ function formatNumberSection(sec: FormatSection, value: number, negSection: bool
   /* ---------- scientific */
   let exponent = 0;
   if (expIdx >= 0) {
-    const intDigits = toks.slice(0, pointIdx >= 0 ? pointIdx : expIdx).filter((t) => t.t === 'digit').length || 1;
+    const intDigits = expIntDigits;
     if (abs !== 0) {
       exponent = Math.floor(Math.log10(abs));
       // engineering-style grouping when several integer placeholders (e.g. ##0.0E+0)
@@ -445,30 +488,22 @@ function formatNumberSection(sec: FormatSection, value: number, negSection: bool
     }
   }
 
-  const decToks = pointIdx >= 0 ? toks.slice(pointIdx + 1, expIdx >= 0 ? expIdx : toks.length).filter((t) => t.t === 'digit') : [];
-  const decimals = decToks.length;
   abs = roundTo(abs, decimals);
   if (expIdx >= 0 && abs >= 10 && exponent !== 0) {
     // rounding overflow (9.99 → 10.0)
-    const intDigits = toks.slice(0, pointIdx >= 0 ? pointIdx : expIdx).filter((t) => t.t === 'digit').length || 1;
-    if (Math.floor(Math.log10(abs)) + 1 > intDigits) {
+    if (Math.floor(Math.log10(abs)) + 1 > expIntDigits) {
       abs /= 10;
       exponent += 1;
     }
   }
   const intPart = Math.floor(abs);
-  let intStr = intPart === 0 ? '' : intPart.toLocaleString('en-US', { useGrouping: false, maximumFractionDigits: 0 });
+  const intStr = intPart === 0 ? '' : integerDigits(intPart);
   let fracStr = decimals ? (abs - intPart).toFixed(decimals).slice(2) : '';
   if (fracStr.length > decimals) fracStr = fracStr.slice(0, decimals);
-
-  const intToks = toks.slice(0, intEnd).map((t, i) => ({ t, i })).filter((x) => x.t.t === 'digit');
-  const contiguous = intToks.length > 0 && intToks.every((x, j) => j === 0 || toks.slice(intToks[j - 1].i + 1, x.i).every((t) => t.t === 'comma'));
 
   // integer digits
   const intOut = new Map<number, string>();
   if (contiguous) {
-    const zeros = intToks.filter((x) => (x.t as { v: string }).v === '0').length;
-    const qs = intToks.filter((x) => (x.t as { v: string }).v === '?').length;
     let s = intStr;
     if (s.length < zeros) s = s.padStart(zeros, '0');
     if (hasThousands) s = groupThousands(s);
@@ -491,7 +526,6 @@ function formatNumberSection(sec: FormatSection, value: number, negSection: bool
   // decimal digits
   const decOut = new Map<number, string>();
   if (pointIdx >= 0) {
-    const decIdx = toks.map((t, i) => ({ t, i })).filter((x) => x.i > pointIdx && (expIdx < 0 || x.i < expIdx) && x.t.t === 'digit');
     // trailing zeros may be dropped for # and ?
     let lastSignificant = fracStr.length - 1;
     while (lastSignificant >= 0 && fracStr[lastSignificant] === '0') lastSignificant--;

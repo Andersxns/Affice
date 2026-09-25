@@ -18,7 +18,7 @@ function colorOf(c: any): string | undefined {
   return '#' + rgb.slice(-6).toLowerCase();
 }
 
-/** Reads .xls, .xlsb, .ods, .fods, .numbers and HTML tables through SheetJS. */
+/** Reads .xls, .xlsb, .numbers and HTML tables through SheetJS. */
 export async function importWithSheetJS(bytes: Uint8Array): Promise<{ wb: Workbook; warning?: string }> {
   const X = await sheetjs();
   const xwb = X.read(bytes, { type: 'array', cellFormula: true, cellStyles: true, cellNF: true, cellDates: false, dense: false });
@@ -112,7 +112,7 @@ export async function importWithSheetJS(bytes: Uint8Array): Promise<{ wb: Workbo
   return { wb };
 }
 
-/** Writes .xls (BIFF8) or .ods through SheetJS: values, formulas, number formats, merges and sizes. */
+/** Writes .xls (BIFF8) through SheetJS: values, formulas, number formats, merges and sizes. */
 export async function exportWithSheetJS(doc: SheetDoc, bookType: 'xls' | 'ods' | 'fods' | 'xlsb'): Promise<Uint8Array> {
   const X = await sheetjs();
   const xwb = X.utils.book_new();

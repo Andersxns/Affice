@@ -185,6 +185,8 @@ export interface ChartSeriesRefs {
 export interface ChartToWrite {
   spec: ChartSpec;
   series: ChartSeriesRefs[];
+  /** Number of points per series (pie slices get their own colours). */
+  points?: number;
   /** Anchor in cells with pixel offsets, plus the bottom-right cell for twoCellAnchor. */
   from: { c: number; r: number; dx: number; dy: number };
   to: { c: number; r: number; dx: number; dy: number };
@@ -201,12 +203,13 @@ function chartXml(ch: ChartToWrite, index: number): string {
         const tx = sr.name ? `<c:tx><c:strRef><c:f>${esc(sr.name)}</c:f></c:strRef></c:tx>` : sr.nameText ? `<c:tx><c:v>${esc(sr.nameText)}</c:v></c:tx>` : '';
         const fill = kind === 'line' || kind === 'scatter' || kind === 'radar' ? `<c:spPr><a:ln w="28575" cap="rnd"><a:solidFill><a:srgbClr val="${hex(i)}"/></a:solidFill><a:round/></a:ln></c:spPr>` : `<c:spPr><a:solidFill><a:srgbClr val="${hex(i)}"/></a:solidFill></c:spPr>`;
         const pie = kind === 'pie' || kind === 'doughnut';
+        const slices = pie ? Array.from({ length: ch.points ?? 0 }, (_, p) => `<c:dPt><c:idx val="${p}"/><c:bubble3D val="0"/><c:spPr><a:solidFill><a:srgbClr val="${hex(p)}"/></a:solidFill><a:ln><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:ln></c:spPr></c:dPt>`).join('') : '';
         const cat = sr.cat ? (kind === 'scatter' ? `<c:xVal><c:numRef><c:f>${esc(sr.cat)}</c:f></c:numRef></c:xVal>` : `<c:cat><c:strRef><c:f>${esc(sr.cat)}</c:f></c:strRef></c:cat>`) : '';
         const val = kind === 'scatter' ? `<c:yVal><c:numRef><c:f>${esc(sr.val)}</c:f></c:numRef></c:yVal>` : `<c:val><c:numRef><c:f>${esc(sr.val)}</c:f></c:numRef></c:val>`;
         const marker = kind === 'line' ? `<c:marker><c:symbol val="${s.smooth ? 'none' : 'circle'}"/></c:marker>` : kind === 'scatter' ? `<c:marker><c:symbol val="circle"/><c:size val="6"/></c:marker>` : '';
         const labels = s.dataLabels ? `<c:dLbls><c:showLegendKey val="0"/><c:showVal val="1"/><c:showCatName val="0"/><c:showSerName val="0"/><c:showPercent val="0"/><c:showBubbleSize val="0"/></c:dLbls>` : '';
         const smooth = kind === 'line' || kind === 'scatter' ? `<c:smooth val="${s.smooth ? 1 : 0}"/>` : '';
-        return `<c:ser><c:idx val="${i}"/><c:order val="${i}"/>${tx}${pie ? '' : fill}${marker}${labels}${cat}${val}${smooth}</c:ser>`;
+        return `<c:ser><c:idx val="${i}"/><c:order val="${i}"/>${tx}${pie ? '' : fill}${marker}${slices}${labels}${cat}${val}${smooth}</c:ser>`;
       })
       .join('');
   const axes = `<c:axId val="111${index}"/><c:axId val="222${index}"/>`;
@@ -323,6 +326,8 @@ export function injectXlsxCharts(bytes: Uint8Array, perSheet: Map<number, ChartT
       ct = ct.replace('</Types>', `<Override PartName="/${drawPath}" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/></Types>`);
     }
     if (!/xmlns:c=/.test(drawXml)) drawXml = drawXml.replace('<xdr:wsDr ', '<xdr:wsDr xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" ');
+    // drawings made for pictures declare r: only on each picture; the chart anchors need it on the root
+    if (!/<xdr:wsDr\b[^>]*\sxmlns:r=/.test(drawXml)) drawXml = drawXml.replace('<xdr:wsDr ', '<xdr:wsDr xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ');
     let anchors = '';
     charts.forEach((ch, k) => {
       const chartPath = `xl/charts/chart${chartNo}.xml`;

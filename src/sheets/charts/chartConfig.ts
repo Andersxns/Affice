@@ -36,9 +36,27 @@ export function resolveSource(doc: SheetDoc, spec: Pick<ChartSpec, 'source'>, ho
   }
 }
 
-export function chartData(doc: SheetDoc, spec: ChartSpec, home: Sheet): SeriesData {
+/**
+ * How a chart reads its source range: whether series run along rows, whether the first row (in series
+ * orientation) holds series names and whether the first column holds categories.
+ */
+export interface ChartLayout {
+  sheet: Sheet;
+  r1: number;
+  c1: number;
+  r2: number;
+  c2: number;
+  byRows: boolean;
+  headerRow: boolean;
+  headerCol: boolean;
+  /** The source values oriented so that series are columns. */
+  grid: unknown[][];
+  firstColDateFmt: boolean;
+}
+
+export function chartLayout(doc: SheetDoc, spec: ChartSpec, home: Sheet): ChartLayout | null {
   const src = resolveSource(doc, spec, home);
-  if (!src) return { categories: [], series: [], xNumeric: false };
+  if (!src) return null;
   const { sheet } = src;
   const grid: unknown[][] = [];
   for (let r = src.r1; r <= src.r2; r++) {
@@ -51,14 +69,6 @@ export function chartData(doc: SheetDoc, spec: ChartSpec, home: Sheet): SeriesDa
   const byRows = spec.seriesInRows ?? cols > rows;
   // orient so that series are columns
   const g = byRows ? transpose(grid) : grid;
-  const fmtCell = (i: number, j: number) => {
-    const r = byRows ? src.r1 + j : src.r1 + i;
-    const c = byRows ? src.c1 + i : src.c1 + j;
-    const v = g[i][j];
-    if (v === null || v === undefined) return '';
-    const fmt = doc.styleOf(sheet, r, c).numFmt;
-    return formatValue(v, fmt).text;
-  };
   const R = g.length;
   const C = g[0]?.length ?? 0;
   const isNum = (v: unknown) => typeof v === 'number';
@@ -70,6 +80,24 @@ export function chartData(doc: SheetDoc, spec: ChartSpec, home: Sheet): SeriesDa
     return isDateFormat(doc.styleOf(sheet, r, c).numFmt);
   })();
   const headerCol = spec.headerCol ?? (C > 1 && (firstCol.some((v) => typeof v === 'string') || firstColDateFmt || (spec.type === 'scatter' && firstCol.every((v) => isNum(v) || v === null))));
+  return { ...src, byRows, headerRow, headerCol, grid: g, firstColDateFmt };
+}
+
+export function chartData(doc: SheetDoc, spec: ChartSpec, home: Sheet): SeriesData {
+  const layout = chartLayout(doc, spec, home);
+  if (!layout) return { categories: [], series: [], xNumeric: false };
+  const { sheet, byRows, headerRow, headerCol, firstColDateFmt, grid: g } = layout;
+  const fmtCell = (i: number, j: number) => {
+    const r = byRows ? layout.r1 + j : layout.r1 + i;
+    const c = byRows ? layout.c1 + i : layout.c1 + j;
+    const v = g[i][j];
+    if (v === null || v === undefined) return '';
+    const fmt = doc.styleOf(sheet, r, c).numFmt;
+    return formatValue(v, fmt).text;
+  };
+  const C = g[0]?.length ?? 0;
+  const isNum = (v: unknown) => typeof v === 'number';
+  const firstCol = g.slice(headerRow ? 1 : 0).map((row) => row[0]);
   const start = headerRow ? 1 : 0;
   const categories = headerCol ? g.slice(start).map((_, i) => fmtCell(i + start, 0)) : g.slice(start).map((_, i) => String(i + 1));
   const series: SeriesData['series'] = [];

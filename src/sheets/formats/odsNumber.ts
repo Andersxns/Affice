@@ -256,12 +256,21 @@ export function numFmtToOds(code: string, name: string): string {
 /** The OpenDocument value type of a number shown with a format code (from its first section). */
 export function odsValueType(code: string | undefined): 'float' | 'percentage' | 'currency' | 'date' | 'time' {
   if (!code || /^general$/i.test(code.trim())) return 'float';
-  const sec = sectionsFor(code)[0];
-  if (!sec || sec.isText) return 'float';
-  if (sec.isDate) return sec.toks.some((t) => t.t === 'date' && /^[ymd]/.test(t.v)) ? 'date' : 'time';
-  const kind = numberSection(sec).kind;
-  return kind === 'percentage' || kind === 'currency' ? kind : 'float';
+  let type = valueTypes.get(code);
+  if (!type) {
+    const sec = sectionsFor(code)[0];
+    if (!sec || sec.isText) type = 'float';
+    else if (sec.isDate) type = sec.toks.some((t) => t.t === 'date' && /^[ymd]/.test(t.v)) ? 'date' : 'time';
+    else {
+      const kind = numberSection(sec).kind;
+      type = kind === 'percentage' || kind === 'currency' ? kind : 'float';
+    }
+    valueTypes.set(code, type);
+  }
+  return type;
 }
+
+const valueTypes = new Map<string, ReturnType<typeof odsValueType>>();
 
 /* ============================================================ reading */
 

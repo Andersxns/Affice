@@ -29,8 +29,10 @@ import {
   type ValidationType,
 } from '../model/types';
 import type { SheetDoc } from '../doc';
-import { fromOdsFormula, odsRangeAddress, odsRefToExcel, odsSheet, toOdsFormula } from './odsFormula';
+import { fromOdsFormula, odsRangeAddress, odsRefToExcel, odsSheet, splitRangeList, toOdsFormula } from './odsFormula';
 import { NS_NUMBER, numFmtToOds, odsToNumFmt, odsValueType } from './odsNumber';
+import { odsChartObject, readOdsChart } from './odsCharts';
+import { fallback, isFallback, scanRegion, splitContent, type CellAttrs, type CellData, type ColData, type RowData, type SplitContent } from './odsScan';
 
 const NS = {
   office: 'urn:oasis:names:tc:opendocument:xmlns:office:1.0',
@@ -535,6 +537,36 @@ function masterPageXml(name: string, display: string | undefined, layout: string
 
 /* ============================================================ writing: workbook */
 
+/** UTF-8 bytes of many strings, encoded in medium-sized batches. */
+function encodeParts(parts: string[]): Uint8Array {
+  const chunks: Uint8Array[] = [];
+  let batch: string[] = [];
+  let len = 0;
+  let total = 0;
+  const flush = () => {
+    if (!batch.length) return;
+    const bytes = strToU8(batch.join(''));
+    chunks.push(bytes);
+    total += bytes.length;
+    batch = [];
+    len = 0;
+  };
+  for (const p of parts) {
+    batch.push(p);
+    len += p.length;
+    if (len >= 1 << 20) flush();
+  }
+  flush();
+  if (chunks.length === 1) return chunks[0];
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const c of chunks) {
+    out.set(c, at);
+    at += c.length;
+  }
+  return out;
+}
+
 interface Frag {
   xml: string;
   n: number;
@@ -679,7 +711,8 @@ export function exportOds(doc: SheetDoc): Uint8Array {
 
   let tableStyleXml = '';
   let graphicStyles = false;
-  let tablesXml = '';
+  let objectN = 0;
+  const tableParts: string[] = [];
   let dbRanges = '';
   let cellCount = 0;
   const now = new Date().toISOString().slice(0, 19);
@@ -742,16 +775,29 @@ export function exportOds(doc: SheetDoc): Uint8Array {
       }
       return { i, off: Math.max(0, pos) };
     };
+    let z = 0;
+    const frameXml = (anchor: ImageSpec['anchor'], w: number, h: number, style: string, name: string, inner: string) => {
+      const endC = endOf(anchor.c, anchor.dx, w, colW, MAX_COLS);
+      const endR = endOf(anchor.r, anchor.dy, h, rowH, MAX_ROWS);
+      const k = cellKey(anchor.r, anchor.c);
+      const xml = `<draw:frame table:end-cell-address="${esc(odsRangeAddress(sheet.name, endR.i, endC.i, endR.i, endC.i))}" table:end-x="${inch(endC.off)}" table:end-y="${inch(endR.off)}" draw:z-index="${z++}" draw:name="${esc(name)}" draw:style-name="${style}" draw:text-style-name="P1" svg:width="${inch(w)}" svg:height="${inch(h)}" svg:x="${inch(anchor.dx)}" svg:y="${inch(anchor.dy)}">${inner}</draw:frame>`;
+      frames.set(k, (frames.get(k) ?? '') + xml);
+      graphicStyles = true;
+    };
     sheet.images.forEach((img: ImageSpec, n) => {
       const pic = pictureFor(img.src);
       if (!pic) return;
-      graphicStyles = true;
-      const endC = endOf(img.anchor.c, img.anchor.dx, img.w, colW, MAX_COLS);
-      const endR = endOf(img.anchor.r, img.anchor.dy, img.h, rowH, MAX_ROWS);
-      const k = cellKey(img.anchor.r, img.anchor.c);
-      const xml = `<draw:frame table:end-cell-address="${esc(odsRangeAddress(sheet.name, endR.i, endC.i, endR.i, endC.i))}" table:end-x="${inch(endC.off)}" table:end-y="${inch(endR.off)}" draw:z-index="${n}" draw:name="${esc(img.alt ? img.alt.slice(0, 60) : `Picture ${n + 1}`)}" draw:style-name="gr1" draw:text-style-name="P1" svg:width="${inch(img.w)}" svg:height="${inch(img.h)}" svg:x="${inch(img.anchor.dx)}" svg:y="${inch(img.anchor.dy)}"><draw:image xlink:href="${pic.href}" xlink:type="simple" xlink:show="embed" xlink:actuate="onLoad" draw:mime-type="${pic.mime}"><text:p/></draw:image>${img.alt ? `<svg:title>${esc(img.alt)}</svg:title>` : ''}</draw:frame>`;
-      frames.set(k, (frames.get(k) ?? '') + xml);
+      frameXml(img.anchor, img.w, img.h, 'gr1', img.alt ? img.alt.slice(0, 60) : `Picture ${n + 1}`, `<draw:image xlink:href="${pic.href}" xlink:type="simple" xlink:show="embed" xlink:actuate="onLoad" draw:mime-type="${pic.mime}"><text:p/></draw:image>${img.alt ? `<svg:title>${esc(img.alt)}</svg:title>` : ''}`);
     });
+    for (const spec of sheet.charts) {
+      const obj = odsChartObject(doc, spec, sheet);
+      if (!obj) continue;
+      const name = `Object ${++objectN}`;
+      files[`${name}/content.xml`] = strToU8(obj.content);
+      files[`${name}/styles.xml`] = strToU8(obj.styles);
+      manifestExtra.push(`<manifest:file-entry manifest:full-path="${name}/content.xml" manifest:media-type="text/xml"/><manifest:file-entry manifest:full-path="${name}/styles.xml" manifest:media-type="text/xml"/><manifest:file-entry manifest:full-path="${name}/" manifest:version="1.3" manifest:media-type="application/vnd.oasis.opendocument.chart"/>`);
+      frameXml(spec.anchor, spec.w, spec.h, 'gr2', spec.title?.slice(0, 60) || name, `<draw:object draw:notify-on-update-of-ranges="${esc(obj.ranges)}" xlink:href="./${name}" xlink:type="simple" xlink:show="embed" xlink:actuate="onLoad"/>`);
+    }
 
     // cells grouped by row
     const byRow = new Map<number, number[]>();
@@ -808,15 +854,13 @@ export function exportOds(doc: SheetDoc): Uint8Array {
         } else if (typeof value === 'number') {
           const type = odsValueType(fmt);
           const date = type === 'date' ? serialToOdsDate(value) : undefined;
-          if (date) attrs.push(`office:value-type="date" office:date-value="${date}" calcext:value-type="date"`);
-          else if (type === 'time') attrs.push(`office:value-type="time" office:time-value="${serialToOdsTime(value)}" calcext:value-type="time"`);
-          else {
-            const t = type === 'date' ? 'float' : type;
-            attrs.push(`office:value-type="${t}" office:value="${value}" calcext:value-type="${t}"`);
-          }
+          // (calcext:value-type is only needed for text and errors)
+          if (date) attrs.push(`office:value-type="date" office:date-value="${date}"`);
+          else if (type === 'time') attrs.push(`office:value-type="time" office:time-value="${serialToOdsTime(value)}"`);
+          else attrs.push(`office:value-type="${type === 'date' ? 'float' : type}" office:value="${value}"`);
           body += paragraphs(formatValue(value, fmt).text, cell?.link);
         } else if (typeof value === 'boolean') {
-          attrs.push(`office:value-type="boolean" office:boolean-value="${value}" calcext:value-type="boolean"`);
+          attrs.push(`office:value-type="boolean" office:boolean-value="${value}"`);
           body += paragraphs(value ? 'TRUE' : 'FALSE', cell?.link);
         } else {
           const s = String(value);
@@ -888,16 +932,16 @@ export function exportOds(doc: SheetDoc): Uint8Array {
       next = r + 1;
     }
     if (next < MAX_ROWS) addRows(next, MAX_ROWS - next);
-    let rowsXml = '';
+    const rowParts: string[] = [];
     let inHeader = false;
     for (const f of rowFrags) {
       const header = f.start < repeatRows;
-      if (header && !inHeader) rowsXml += '<table:table-header-rows>';
-      if (!header && inHeader) rowsXml += '</table:table-header-rows>';
+      if (header && !inHeader) rowParts.push('<table:table-header-rows>');
+      if (!header && inHeader) rowParts.push('</table:table-header-rows>');
       inHeader = header;
-      rowsXml += withRepeat(f.xml, 'table:number-rows-repeated', f.n);
+      rowParts.push(withRepeat(f.xml, 'table:number-rows-repeated', f.n));
     }
-    if (inHeader) rowsXml += '</table:table-header-rows>';
+    if (inHeader) rowParts.push('</table:table-header-rows>');
 
     // columns
     const colFrags: Frag[] = [];
@@ -928,7 +972,7 @@ export function exportOds(doc: SheetDoc): Uint8Array {
     if (sheet.protection?.enabled) attrs.push('table:protected="true"');
     const area = sheet.print?.area;
     if (area) attrs.push(`table:print-ranges="${esc(odsRangeAddress(sheet.name, area.r1, area.c1, Math.min(area.r2, MAX_ROWS - 1), Math.min(area.c2, MAX_COLS - 1)))}"`);
-    tablesXml += `<table:table ${attrs.join(' ')}>${colsXml}${rowsXml}${local.length ? `<table:named-expressions>${local.join('')}</table:named-expressions>` : ''}${cfs ? `<calcext:conditional-formats>${cfs}</calcext:conditional-formats>` : ''}</table:table>`;
+    tableParts.push(`<table:table ${attrs.join(' ')}>${colsXml}`, ...rowParts, `${local.length ? `<table:named-expressions>${local.join('')}</table:named-expressions>` : ''}${cfs ? `<calcext:conditional-formats>${cfs}</calcext:conditional-formats>` : ''}</table:table>`);
 
     if (sheet.filter) {
       const f = sheet.filter.range;
@@ -938,10 +982,15 @@ export function exportOds(doc: SheetDoc): Uint8Array {
 
   const globalNames = wb.names.filter((n) => n.sheet === undefined).map((n) => namedXml(n, wb.sheets[0]?.name ?? 'Sheet1'));
   const graphics = graphicStyles
-    ? '<style:style style:name="gr1" style:family="graphic"><style:graphic-properties draw:stroke="none" draw:fill="none" draw:textarea-horizontal-align="center" draw:textarea-vertical-align="middle" draw:color-mode="standard" draw:luminance="0%" draw:contrast="0%" draw:gamma="100%" draw:red="0%" draw:green="0%" draw:blue="0%" fo:clip="rect(0in, 0in, 0in, 0in)" draw:image-opacity="100%" style:mirror="none"/></style:style><style:style style:name="P1" style:family="paragraph"><style:paragraph-properties fo:text-align="center"/></style:style>'
+    ? '<style:style style:name="gr1" style:family="graphic"><style:graphic-properties draw:stroke="none" draw:fill="none" draw:textarea-horizontal-align="center" draw:textarea-vertical-align="middle" draw:color-mode="standard" draw:luminance="0%" draw:contrast="0%" draw:gamma="100%" draw:red="0%" draw:green="0%" draw:blue="0%" fo:clip="rect(0in, 0in, 0in, 0in)" draw:image-opacity="100%" style:mirror="none"/></style:style><style:style style:name="gr2" style:family="graphic"><style:graphic-properties draw:stroke="none" draw:fill="none" draw:textarea-horizontal-align="center" draw:textarea-vertical-align="middle" draw:ole-draw-aspect="1"/></style:style><style:style style:name="P1" style:family="paragraph"><style:paragraph-properties fo:text-align="center"/></style:style>'
     : '';
 
-  const content = `${XML_DECL}<office:document-content ${XMLNS} office:version="1.3"><office:scripts/>${fontFaces(fonts)}<office:automatic-styles>${colXml}${rowXml}${tableStyleXml}${dataXml}${cellXml}${graphics}</office:automatic-styles><office:body><office:spreadsheet><table:calculation-settings table:case-sensitive="false" table:search-criteria-must-apply-to-whole-cell="true" table:use-wildcards="true" table:use-regular-expressions="false" table:automatic-find-labels="false"/>${validationsXml ? `<table:content-validations>${validationsXml}</table:content-validations>` : ''}${tablesXml}${globalNames.length ? `<table:named-expressions>${globalNames.join('')}</table:named-expressions>` : ''}${dbRanges ? `<table:database-ranges>${dbRanges}</table:database-ranges>` : ''}</office:spreadsheet></office:body></office:document-content>`;
+  // the body is kept in pieces: one string for a big sheet would be slow to encode
+  const content = [
+    `${XML_DECL}<office:document-content ${XMLNS} office:version="1.3"><office:scripts/>${fontFaces(fonts)}<office:automatic-styles>${colXml}${rowXml}${tableStyleXml}${dataXml}${cellXml}${graphics}</office:automatic-styles><office:body><office:spreadsheet><table:calculation-settings table:case-sensitive="false" table:search-criteria-must-apply-to-whole-cell="true" table:use-wildcards="true" table:use-regular-expressions="false" table:automatic-find-labels="false"/>${validationsXml ? `<table:content-validations>${validationsXml}</table:content-validations>` : ''}`,
+    ...tableParts,
+    `${globalNames.length ? `<table:named-expressions>${globalNames.join('')}</table:named-expressions>` : ''}${dbRanges ? `<table:database-ranges>${dbRanges}</table:database-ranges>` : ''}</office:spreadsheet></office:body></office:document-content>`,
+  ];
 
   const styles = `${XML_DECL}<office:document-styles ${XMLNS} office:version="1.3">${fontFaces(fonts)}<office:styles><style:default-style style:family="table-cell"><style:paragraph-properties style:tab-stop-distance="0.5in"/><style:text-properties style:font-name="Calibri" fo:font-size="11pt" style:font-size-asian="11pt" style:font-size-complex="11pt"/></style:default-style><number:number-style style:name="N0"><number:number number:min-integer-digits="1"/></number:number-style><style:style style:name="Default" style:family="table-cell"><style:table-cell-properties style:vertical-align="bottom"/><style:text-properties style:font-name="Calibri" fo:font-size="11pt" style:font-size-asian="11pt" style:font-size-complex="11pt"/></style:style>${cfDataXml}${cfStyleXml}</office:styles><office:automatic-styles>${pageLayoutXmlAll}</office:automatic-styles><office:master-styles>${masterXml}</office:master-styles></office:document-styles>`;
 
@@ -950,7 +999,7 @@ export function exportOds(doc: SheetDoc): Uint8Array {
   const meta = `${XML_DECL}<office:document-meta ${XMLNS} office:version="1.3"><office:meta><meta:generator>Affice</meta:generator>${props.title ? `<dc:title>${esc(props.title)}</dc:title>` : ''}${props.author ? `<meta:initial-creator>${esc(props.author)}</meta:initial-creator><dc:creator>${esc(props.author)}</dc:creator>` : ''}<meta:creation-date>${created}</meta:creation-date><dc:date>${now}</dc:date>${props.company ? `<meta:user-defined meta:name="Company">${esc(props.company)}</meta:user-defined>` : ''}<meta:document-statistic meta:table-count="${wb.sheets.length}" meta:cell-count="${cellCount}"/></office:meta></office:document-meta>`;
 
   files.mimetype = [strToU8(MIME), { level: 0 }];
-  files['content.xml'] = strToU8(content);
+  files['content.xml'] = encodeParts(content);
   files['styles.xml'] = strToU8(styles);
   files['meta.xml'] = strToU8(meta);
   files['settings.xml'] = strToU8(settingsXml(wb));
@@ -1026,6 +1075,19 @@ function descendants(root: Document | Element, ns: string, name: string): Elemen
   return Array.from(root.getElementsByTagNameNS(ns, name));
 }
 
+/**
+ * The parts of a document that hold styles. Searching only these keeps the reader from walking every
+ * cell (and, in flat files, the charts' own styles stay out).
+ */
+function styleSections(d: Document | null): Element[] {
+  if (!d?.documentElement) return [];
+  return kids(d.documentElement).filter((k) => k.namespaceURI === NS.office && /^(font-face-decls|styles|automatic-styles|master-styles)$/.test(k.localName));
+}
+
+function inSections(sections: Element[], ns: string, name: string): Element[] {
+  return sections.flatMap((sec) => descendants(sec, ns, name));
+}
+
 /** The text of a paragraph-bearing element, with text:s, text:tab and line breaks expanded. */
 function textOf(el: Element): { text: string; link?: string } {
   let link: string | undefined;
@@ -1066,6 +1128,101 @@ function textOf(el: Element): { text: string; link?: string } {
 }
 
 const intAttr = (el: Element, name: string) => Math.max(1, parseInt(at(el, NS.table, name) ?? '1', 10) || 1);
+
+/** Everything the reader needs from a cell's attributes, in one pass (cells are the bulk of a file). */
+function cellAttrs(el: Element): CellAttrs {
+  const out: CellAttrs = { repeat: 1, spanC: 1, spanR: 1, mxC: 1, mxR: 1 };
+  const list = el.attributes;
+  const int = (v: string) => Math.max(1, parseInt(v, 10) || 1);
+  for (let i = 0; i < list.length; i++) {
+    const attr = list[i];
+    const ns = attr.namespaceURI;
+    const v = attr.value;
+    if (ns === NS.table)
+      switch (attr.localName) {
+        case 'number-columns-repeated':
+          out.repeat = int(v);
+          break;
+        case 'style-name':
+          out.style = v;
+          break;
+        case 'content-validation-name':
+          out.validation = v;
+          break;
+        case 'formula':
+          out.formula = v;
+          break;
+        case 'number-columns-spanned':
+          out.spanC = int(v);
+          break;
+        case 'number-rows-spanned':
+          out.spanR = int(v);
+          break;
+        case 'number-matrix-columns-spanned':
+          out.mxC = int(v);
+          break;
+        case 'number-matrix-rows-spanned':
+          out.mxR = int(v);
+          break;
+        default:
+          break;
+      }
+    else if (ns === NS.office)
+      switch (attr.localName) {
+        case 'value-type':
+          out.type = v;
+          break;
+        case 'value':
+          out.value = v;
+          break;
+        case 'date-value':
+          out.dateValue = v;
+          break;
+        case 'time-value':
+          out.timeValue = v;
+          break;
+        case 'boolean-value':
+          out.boolValue = v;
+          break;
+        case 'string-value':
+          out.stringValue = v;
+          break;
+        default:
+          break;
+      }
+    else if (ns === NS.calcext && attr.localName === 'value-type') out.calcType = v;
+  }
+  return out;
+}
+
+/** A row read through the DOM, in the same form the fast reader produces. */
+function rowFromDom(el: Element): RowData {
+  const cells: CellData[] = [];
+  for (let k = el.firstChild; k; k = k.nextSibling) {
+    if (k.nodeType !== 1) continue;
+    const e = k as Element;
+    if (e.namespaceURI === NS.table && (e.localName === 'table-cell' || e.localName === 'covered-table-cell')) cells.push(cellFromDom(e));
+  }
+  return { repeat: intAttr(el, 'number-rows-repeated'), style: at(el, NS.table, 'style-name'), visibility: at(el, NS.table, 'visibility'), defaultStyle: at(el, NS.table, 'default-cell-style-name'), cells };
+}
+
+function cellFromDom(cellEl: Element): CellData {
+  let paras = 0;
+  let marked = false;
+  let note: Element | undefined;
+  const frames: Element[] = [];
+  for (let k = cellEl.firstChild; k; k = k.nextSibling) {
+    if (k.nodeType !== 1) continue;
+    const e = k as Element;
+    if (e.namespaceURI === NS.text && (e.localName === 'p' || e.localName === 'h')) {
+      paras++;
+      // plain paragraphs hold a single run of text
+      if (e.firstChild && (e.firstChild.nodeType !== 3 || e.firstChild.nextSibling)) marked = true;
+    } else if (e.namespaceURI === NS.office && e.localName === 'annotation') note = e;
+    else if (e.namespaceURI === NS.draw && e.localName === 'frame') frames.push(e);
+  }
+  return { a: cellAttrs(cellEl), paras, marked, note: note ? textOf(note).text : undefined, frames: () => frames, text: () => textOf(cellEl) };
+}
 
 /** Splits at a separator outside quotes, brackets and parentheses. */
 function splitTop(s: string, sep: string): string[] {
@@ -1208,14 +1365,15 @@ class StyleReader {
 
   collect(root: Document | null): void {
     if (!root) return;
-    for (const ff of descendants(root, NS.style, 'font-face')) {
+    const sections = styleSections(root);
+    for (const ff of inSections(sections, NS.style, 'font-face')) {
       const name = at(ff, NS.style, 'name');
       const fam = at(ff, NS.svg, 'font-family')?.replace(/^['"]|['"]$/g, '');
       if (name) this.fonts.set(name, fam || name);
     }
-    for (const ds of descendants(root, NS.style, 'default-style'))
+    for (const ds of inSections(sections, NS.style, 'default-style'))
       if (at(ds, NS.style, 'family') === 'table-cell') Object.assign(this.defaults, attrs(child(ds, NS.style, 'text-properties')));
-    for (const s of descendants(root, NS.style, 'style')) {
+    for (const s of inSections(sections, NS.style, 'style')) {
       if (at(s, NS.style, 'family') !== 'table-cell') continue;
       const name = at(s, NS.style, 'name');
       if (!name) continue;
@@ -1234,7 +1392,7 @@ class StyleReader {
       this.styles.set(name, st);
       this.byDisplay.set(st.display ?? name, st);
     }
-    for (const el of kids(root.documentElement)) {
+    for (const el of sections) {
       if (el.localName !== 'styles' && el.localName !== 'automatic-styles') continue;
       for (const ds of kids(el)) if (ds.namespaceURI === NS_NUMBER && ds.localName.endsWith('-style')) {
         const name = at(ds, NS.style, 'name');
@@ -1552,27 +1710,56 @@ function pageSetupIn(master: Element | undefined, layouts: Map<string, Element>)
   return clean(pr) === clean(DEFAULT_PRINT) ? undefined : pr;
 }
 
-export async function importOds(bytes: Uint8Array): Promise<{ wb: Workbook; warning?: string }> {
+export async function importOds(bytes: Uint8Array, options: { fast?: boolean } = {}): Promise<{ wb: Workbook; warning?: string }> {
+  if (options.fast === false) return readOds(bytes, false);
+  try {
+    return readOds(bytes, true);
+  } catch (e) {
+    // the fast reader met something unusual: read the whole file through the DOM
+    if (isFallback(e)) return readOds(bytes, false);
+    throw e;
+  }
+}
+
+function readOds(bytes: Uint8Array, fast: boolean): { wb: Workbook; warning?: string } {
   let files: Record<string, Uint8Array> = {};
   const parseXml = (xml: string): Document | null => {
     const d = new DOMParser().parseFromString(xml, 'application/xml');
     return d.getElementsByTagName('parsererror').length ? null : d;
   };
   let parse: (path: string) => Document | null;
-  if (bytes[0] === 0x50 && bytes[1] === 0x4b) {
+  const zipped = bytes[0] === 0x50 && bytes[1] === 0x4b;
+  // the text of content.xml and, on the fast path, where its rows are
+  let contentText: string | undefined;
+  let split: SplitContent | null = null;
+  let content: Document | null;
+  if (zipped) {
     try {
       files = unzipSync(bytes);
     } catch {
       throw new Error('This file is not a valid OpenDocument spreadsheet.');
     }
     parse = (path) => (files[path] ? parseXml(strFromU8(files[path])) : null);
+    if (fast && files['content.xml']) {
+      contentText = strFromU8(files['content.xml']);
+      split = splitContent(contentText);
+    }
+    content = split ? parseXml(split.reduced) : parse('content.xml');
   } else {
     // flat OpenDocument (.fods): one XML file holds everything
-    const flat = parseXml(strFromU8(bytes).replace(/^\uFEFF/, ''));
+    const text = strFromU8(bytes).replace(/^\uFEFF/, '');
+    if (fast) {
+      contentText = text;
+      split = splitContent(text, true);
+    }
+    const flat = parseXml(split ? split.reduced : text);
     parse = () => flat;
+    content = flat;
   }
-  const content = parse('content.xml');
-  if (!content) throw new Error('This file is not a valid OpenDocument spreadsheet.');
+  if (!content) {
+    if (split) throw fallback();
+    throw new Error('This file is not a valid OpenDocument spreadsheet.');
+  }
   const stylesDoc = parse('styles.xml');
   const reader = new StyleReader();
   reader.collect(stylesDoc);
@@ -1580,15 +1767,17 @@ export async function importOds(bytes: Uint8Array): Promise<{ wb: Workbook; warn
   const layouts = new Map<string, Element>();
   const masters = new Map<string, Element>();
   if (stylesDoc) {
-    for (const l of descendants(stylesDoc, NS.style, 'page-layout')) layouts.set(at(l, NS.style, 'name') ?? '', l);
-    for (const m of descendants(stylesDoc, NS.style, 'master-page')) masters.set(at(m, NS.style, 'name') ?? '', m);
+    const sections = styleSections(stylesDoc);
+    for (const l of inSections(sections, NS.style, 'page-layout')) layouts.set(at(l, NS.style, 'name') ?? '', l);
+    for (const m of inSections(sections, NS.style, 'master-page')) masters.set(at(m, NS.style, 'name') ?? '', m);
   }
   const tableStyles = new Map<string, { props: Record<string, string>; master?: string }>();
-  for (const s of descendants(content, NS.style, 'style'))
+  const contentStyles = inSections(styleSections(content), NS.style, 'style');
+  for (const s of contentStyles)
     if (at(s, NS.style, 'family') === 'table') tableStyles.set(at(s, NS.style, 'name') ?? '', { props: attrs(child(s, NS.style, 'table-properties')), master: at(s, NS.style, 'master-page-name') });
   const colWidths = new Map<string, number>();
   const rowHeights = new Map<string, { h?: number; optimal: boolean }>();
-  for (const s of descendants(content, NS.style, 'style')) {
+  for (const s of contentStyles) {
     const family = at(s, NS.style, 'family');
     const name = at(s, NS.style, 'name') ?? '';
     if (family === 'table-column') {
@@ -1623,7 +1812,9 @@ export async function importOds(bytes: Uint8Array): Promise<{ wb: Workbook; warn
 
   // validations
   const validations = new Map<string, PendingValidation>();
-  for (const v of descendants(content, NS.table, 'content-validation')) {
+  const spreadsheet = child(child(content.documentElement, NS.office, 'body') ?? content.documentElement, NS.office, 'spreadsheet');
+  if (!spreadsheet) throw new Error('This file is not a valid OpenDocument spreadsheet.');
+  for (const v of kids(child(spreadsheet, NS.table, 'content-validations') ?? spreadsheet).filter((k) => k.localName === 'content-validation')) {
     const name = at(v, NS.table, 'name');
     if (!name) continue;
     const cond = at(v, NS.table, 'condition');
@@ -1649,8 +1840,6 @@ export async function importOds(bytes: Uint8Array): Promise<{ wb: Workbook; warn
     validations.set(name, { rule });
   }
 
-  const spreadsheet = descendants(content, NS.office, 'spreadsheet')[0];
-  if (!spreadsheet) throw new Error('This file is not a valid OpenDocument spreadsheet.');
   const pictures = new Map<string, string>();
   const pictureSrc = (href: string | undefined): string | undefined => {
     if (!href) return undefined;
@@ -1665,6 +1854,7 @@ export async function importOds(bytes: Uint8Array): Promise<{ wb: Workbook; warn
   };
 
   const tables = kids(spreadsheet).filter((t) => t.localName === 'table' && t.namespaceURI === NS.table);
+  if (split && split.regions.length !== tables.length) throw fallback();
   const sheetByName = new Map<string, Sheet>();
   for (const [index, table] of tables.entries()) {
     const name = at(table, NS.table, 'name') || `Sheet${index + 1}`;
@@ -1682,47 +1872,61 @@ export async function importOds(bytes: Uint8Array): Promise<{ wb: Workbook; warn
     if (at(table, NS.table, 'protected') === 'true') sheet.protection = { enabled: true };
     const printRanges = at(table, NS.table, 'print-ranges');
     if (printRanges) {
-      const pr = parseRangeAddress(printRanges.split(/\s+/)[0]);
+      const pr = parseRangeAddress(splitRangeList(printRanges)[0] ?? '');
       if (pr) sheet.print = { ...(sheet.print ?? DEFAULT_PRINT), area: pr.range };
     }
 
     // columns
     const colRuns: { c: number; n: number; w?: number; hidden: boolean; style?: string }[] = [];
     let col = 0;
+    const addColumn = (cd: ColData) => {
+      if (col < MAX_COLS) colRuns.push({ c: col, n: Math.min(cd.repeat, MAX_COLS - col), w: colWidths.get(cd.style ?? ''), hidden: cd.visibility === 'collapse', style: cd.defaultStyle });
+      col += cd.repeat;
+    };
     const readCols = (el: Element) => {
       for (const k of kids(el)) {
         if (k.namespaceURI !== NS.table) continue;
-        if (k.localName === 'table-column') {
-          const n = intAttr(k, 'number-columns-repeated');
-          if (col < MAX_COLS) colRuns.push({ c: col, n: Math.min(n, MAX_COLS - col), w: colWidths.get(at(k, NS.table, 'style-name') ?? ''), hidden: at(k, NS.table, 'visibility') === 'collapse', style: at(k, NS.table, 'default-cell-style-name') });
-          col += n;
-        } else if (k.localName === 'table-column-group' || k.localName === 'table-header-columns' || k.localName === 'table-columns') readCols(k);
+        if (k.localName === 'table-column') addColumn({ repeat: intAttr(k, 'number-columns-repeated'), style: at(k, NS.table, 'style-name'), visibility: at(k, NS.table, 'visibility'), defaultStyle: at(k, NS.table, 'default-cell-style-name') });
+        else if (k.localName === 'table-column-group' || k.localName === 'table-header-columns' || k.localName === 'table-columns') readCols(k);
       }
     };
-    readCols(table);
-    const widthCount = new Map<number, number>();
-    for (const run of colRuns) if (run.w !== undefined) widthCount.set(Math.round(run.w), (widthCount.get(Math.round(run.w)) ?? 0) + run.n);
-    const defaultW = [...widthCount.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
-    if (defaultW) sheet.defaultColWidth = defaultW;
     const colStyleId: number[] = [];
-    for (const run of colRuns) {
-      const sid = run.style && run.style !== 'Default' ? styleIdOf(run.style) : 0;
-      const customW = run.w !== undefined && Math.abs(run.w - sheet.defaultColWidth) > 0.5;
-      if (!customW && !run.hidden && !sid) continue;
-      if (run.n > 2000 && !run.hidden && !sid) continue;
-      for (let c = run.c; c < run.c + Math.min(run.n, 16384); c++) {
-        const info: { w?: number; hidden?: boolean; s?: number } = {};
-        if (customW) info.w = Math.round(run.w!);
-        if (run.hidden) info.hidden = true;
-        if (sid && sid !== defaultId) {
-          info.s = sid;
-          colStyleId[c] = sid;
+    let colsDone = false;
+    // columns come before rows: their sizes and styles are settled when the first row arrives
+    const finishColumns = () => {
+      if (colsDone) return;
+      colsDone = true;
+      const widthCount = new Map<number, number>();
+      for (const run of colRuns) if (run.w !== undefined) widthCount.set(Math.round(run.w), (widthCount.get(Math.round(run.w)) ?? 0) + run.n);
+      const defaultW = [...widthCount.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+      if (defaultW) sheet.defaultColWidth = defaultW;
+      for (const run of colRuns) {
+        const sid = run.style && run.style !== 'Default' ? styleIdOf(run.style) : 0;
+        const customW = run.w !== undefined && Math.abs(run.w - sheet.defaultColWidth) > 0.5;
+        if (!customW && !run.hidden && !sid) continue;
+        if (run.n > 2000 && !run.hidden && !sid) continue;
+        for (let c = run.c; c < run.c + Math.min(run.n, 16384); c++) {
+          const info: { w?: number; hidden?: boolean; s?: number } = {};
+          if (customW) info.w = Math.round(run.w!);
+          if (run.hidden) info.hidden = true;
+          if (sid && sid !== defaultId) {
+            info.s = sid;
+            colStyleId[c] = sid;
+          }
+          if (Object.keys(info).length) sheet.cols.set(c, info);
         }
-        if (Object.keys(info).length) sheet.cols.set(c, info);
       }
-    }
+    };
     const colDefaultName = (c: number): string | undefined => {
-      for (const run of colRuns) if (c >= run.c && c < run.c + run.n) return run.style;
+      let lo = 0;
+      let hi = colRuns.length - 1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        const run = colRuns[mid];
+        if (c < run.c) hi = mid - 1;
+        else if (c >= run.c + run.n) lo = mid + 1;
+        else return run.style;
+      }
       return undefined;
     };
 
@@ -1735,33 +1939,33 @@ export async function importOds(bytes: Uint8Array): Promise<{ wb: Workbook; warn
     let row = 0;
     let capped = false;
 
-    const readRow = (el: Element) => {
-      const n = intAttr(el, 'number-rows-repeated');
-      const rs = rowHeights.get(at(el, NS.table, 'style-name') ?? '');
-      const vis = at(el, NS.table, 'visibility');
+    const readRow = (rd: RowData) => {
+      finishColumns();
+      const n = rd.repeat;
+      const rs = rowHeights.get(rd.style ?? '');
+      const vis = rd.visibility;
       if (row < MAX_ROWS) rowRuns.push({ r: row, n: Math.min(n, MAX_ROWS - row), h: rs?.h, optimal: rs?.optimal ?? true, hidden: vis === 'collapse', filtered: vis === 'filter' });
-      const rowDefault = at(el, NS.table, 'default-cell-style-name');
+      const rowDefault = rd.defaultStyle;
       let c = 0;
-      const cellEls = kids(el).filter((k) => k.namespaceURI === NS.table && (k.localName === 'table-cell' || k.localName === 'covered-table-cell'));
-      for (const [ci, cellEl] of cellEls.entries()) {
-        const cn = intAttr(cellEl, 'number-columns-repeated');
+      const cells = rd.cells;
+      for (const [ci, cd] of cells.entries()) {
+        const a = cd.a;
+        const cn = a.repeat;
         const c0 = c;
         c += cn;
         if (c0 >= MAX_COLS || row >= MAX_ROWS) continue;
         const reps = Math.min(cn, MAX_COLS - c0);
-        const styleName = at(cellEl, NS.table, 'style-name') ?? rowDefault ?? colDefaultName(c0);
-        const valName = at(cellEl, NS.table, 'content-validation-name');
-        const formulaSrc = at(cellEl, NS.table, 'formula');
-        const type = at(cellEl, NS.office, 'value-type');
-        const calcType = at(cellEl, NS.calcext, 'value-type');
-        const hasText = kids(cellEl).some((k) => k.namespaceURI === NS.text && (k.localName === 'p' || k.localName === 'h'));
-        const note = child(cellEl, NS.office, 'annotation');
-        const framesEls = kids(cellEl).filter((k) => k.namespaceURI === NS.draw && k.localName === 'frame');
-        const spanC = intAttr(cellEl, 'number-columns-spanned');
-        const spanR = intAttr(cellEl, 'number-rows-spanned');
-        const mxC = intAttr(cellEl, 'number-matrix-columns-spanned');
-        const mxR = intAttr(cellEl, 'number-matrix-rows-spanned');
-        const empty = !formulaSrc && !type && !hasText && !note && !framesEls.length;
+        const styleName = a.style ?? rowDefault ?? colDefaultName(c0);
+        const valName = a.validation;
+        const formulaSrc = a.formula;
+        const type = a.type;
+        const calcType = a.calcType;
+        const { paras, marked } = cd;
+        const note = cd.note;
+        const framesEls = cd.frames();
+        const hasText = paras > 0;
+        const { spanC, spanR, mxC, mxR } = a;
+        const empty = !formulaSrc && !type && !hasText && note === undefined && !framesEls.length;
         const rowsHere = Math.min(n, MAX_ROWS - row);
         if (valName && validations.has(valName)) cellRanges.add(valName, { r1: row, c1: c0, r2: row + rowsHere - 1, c2: c0 + reps - 1 });
         if (empty) {
@@ -1769,7 +1973,7 @@ export async function importOds(bytes: Uint8Array): Promise<{ wb: Workbook; warn
           const sid = styleIdOf(styleName);
           if (!sid || sid === defaultId) continue;
           // a styled run to the end of the row is row formatting
-          if (ci === cellEls.length - 1 && reps > 256) {
+          if (ci === cells.length - 1 && reps > 256) {
             for (let r = row; r < row + Math.min(rowsHere, 100_000); r++) sheet.rows.set(r, { ...(sheet.rows.get(r) ?? {}), s: sid });
             continue;
           }
@@ -1782,13 +1986,11 @@ export async function importOds(bytes: Uint8Array): Promise<{ wb: Workbook; warn
         // content
         const cell: { v?: Scalar; f?: string; s?: number; link?: string; note?: string } = {};
         const sid = styleIdOf(styleName);
-        const t = textOf(cellEl);
+        // numbers carry their value in attributes: their text is only needed for links or odd files
+        const needText = hasText && (marked || paras > 1 || type === 'string' || type === undefined || calcType === 'error' || (type !== 'boolean' && a.value === undefined && a.dateValue === undefined && a.timeValue === undefined));
+        const t = needText ? cd.text() : { text: '', link: undefined };
         if (t.link) cell.link = t.link;
-        if (note) {
-          const paras = kids(note).filter((k) => k.namespaceURI === NS.text && k.localName === 'p');
-          const tmp = textOf(note);
-          cell.note = paras.length ? tmp.text : note.textContent?.trim() ?? '';
-        }
+        if (note !== undefined) cell.note = note;
         let extraFmt: string | undefined;
         if (calcType === 'error') cell.v = errFromCode((t.text.trim() || '#VALUE!').replace(/^Err:\d+$/, '#VALUE!'));
         else
@@ -1796,30 +1998,30 @@ export async function importOds(bytes: Uint8Array): Promise<{ wb: Workbook; warn
             case 'float':
             case 'percentage':
             case 'currency': {
-              const num = Number(at(cellEl, NS.office, 'value'));
+              const num = Number(a.value);
               cell.v = Number.isFinite(num) ? num : t.text;
               if (type === 'percentage') extraFmt = '0%';
               break;
             }
             case 'date': {
-              const serial = odsDateToSerial(at(cellEl, NS.office, 'date-value') ?? '');
+              const serial = odsDateToSerial(a.dateValue ?? '');
               cell.v = serial ?? t.text;
               if (serial !== undefined) extraFmt = serial % 1 ? `${SHORT_DATE} h:mm` : SHORT_DATE;
               break;
             }
             case 'time': {
-              const serial = odsTimeToSerial(at(cellEl, NS.office, 'time-value') ?? '');
+              const serial = odsTimeToSerial(a.timeValue ?? '');
               cell.v = serial ?? t.text;
               if (serial !== undefined) extraFmt = serial >= 1 ? '[h]:mm:ss' : 'h:mm:ss';
               break;
             }
             case 'boolean': {
-              const b = (at(cellEl, NS.office, 'boolean-value') ?? '').toLowerCase();
+              const b = (a.boolValue ?? '').toLowerCase();
               cell.v = b === 'true' || b === '1';
               break;
             }
             case 'string':
-              cell.v = at(cellEl, NS.office, 'string-value') ?? t.text;
+              cell.v = a.stringValue ?? t.text;
               break;
             case 'void':
               break;
@@ -1858,7 +2060,23 @@ export async function importOds(bytes: Uint8Array): Promise<{ wb: Workbook; warn
       row += n;
     };
 
-    const readFrame = (fr: Element, target: Sheet, r: number, c: number) => {
+    const readFrame = (fr: Element, target: Sheet, r: number, c: number, x = lengthPx(at(fr, NS.svg, 'x')) ?? 0, y = lengthPx(at(fr, NS.svg, 'y')) ?? 0) => {
+      // offsets are stored in inches: round away the conversion noise
+      const dx = Math.max(0, Math.round(x * 10) / 10);
+      const dy = Math.max(0, Math.round(y * 10) / 10);
+      const obj = child(fr, NS.draw, 'object');
+      if (obj) {
+        // charts: embedded chart documents (inline in flat files)
+        const inline = child(obj, NS.office, 'document');
+        const href = at(obj, NS.xlink, 'href')?.replace(/^\.\//, '').replace(/\/$/, '');
+        const root = inline ?? (zipped && href ? parse(`${href}/content.xml`) : null);
+        const spec = root ? readOdsChart(root, target.name) : null;
+        if (!spec) return;
+        const w = lengthPx(at(fr, NS.svg, 'width')) ?? 480;
+        const h = lengthPx(at(fr, NS.svg, 'height')) ?? 290;
+        target.charts.push({ ...spec, id: seq(), anchor: { r, c, dx, dy }, w: Math.max(60, Math.round(w)), h: Math.max(40, Math.round(h)) });
+        return;
+      }
       const img = child(fr, NS.draw, 'image');
       if (!img) return;
       const binary = child(img, NS.office, 'binary-data')?.textContent?.replace(/\s+/g, '');
@@ -1867,27 +2085,47 @@ export async function importOds(bytes: Uint8Array): Promise<{ wb: Workbook; warn
       const w = lengthPx(at(fr, NS.svg, 'width')) ?? 200;
       const h = lengthPx(at(fr, NS.svg, 'height')) ?? 150;
       const alt = child(fr, NS.svg, 'title')?.textContent || child(fr, NS.svg, 'desc')?.textContent || undefined;
-      target.images.push({ id: seq(), src, anchor: { r, c, dx: Math.max(0, lengthPx(at(fr, NS.svg, 'x')) ?? 0), dy: Math.max(0, lengthPx(at(fr, NS.svg, 'y')) ?? 0) }, w: Math.max(10, Math.round(w)), h: Math.max(10, Math.round(h)), alt });
+      target.images.push({ id: seq(), src, anchor: { r, c, dx, dy }, w: Math.max(10, Math.round(w)), h: Math.max(10, Math.round(h)), alt });
     };
 
     const shapes: Element[] = [];
     const localNames: Element[] = [];
     const cfBlocks: Element[] = [];
+    let headerStart = 0;
+    const header = (start: boolean) => {
+      if (start) headerStart = row;
+      else headerRows ??= { start: headerStart, end: row };
+    };
     const readRows = (el: Element) => {
       for (const k of kids(el)) {
         if (k.namespaceURI === NS.table) {
-          if (k.localName === 'table-row') readRow(k);
+          if (k.localName === 'table-row') readRow(rowFromDom(k));
           else if (k.localName === 'table-header-rows') {
-            const start = row;
+            header(true);
             readRows(k);
-            headerRows ??= { start, end: row };
+            header(false);
           } else if (k.localName === 'table-row-group' || k.localName === 'table-rows') readRows(k);
           else if (k.localName === 'shapes') shapes.push(k);
           else if (k.localName === 'named-expressions') localNames.push(k);
         } else if (k.namespaceURI === NS.calcext && k.localName === 'conditional-formats') cfBlocks.push(k);
       }
     };
+    readCols(table);
     readRows(table);
+    // the fast path: this sheet's rows and columns were cut out of the DOM and are streamed instead
+    const region = split?.regions[index];
+    if (split && region)
+      scanRegion(contentText!, region, split.prefixes, split.xmlns, {
+        column: addColumn,
+        row: readRow,
+        headerRows: header,
+        extra: (el) => {
+          if (el.namespaceURI === NS.table && el.localName === 'shapes') shapes.push(el);
+          else if (el.namespaceURI === NS.table && el.localName === 'named-expressions') localNames.push(el);
+          else if (el.namespaceURI === NS.calcext && el.localName === 'conditional-formats') cfBlocks.push(el);
+        },
+      });
+    finishColumns();
     if (capped) warnings.push(`“${sheet.name}” is very large; only the first 3 million cells were loaded.`);
 
     // row heights: the most common height becomes the default
@@ -1921,7 +2159,7 @@ export async function importOds(bytes: Uint8Array): Promise<{ wb: Workbook; warn
           const cell = sheet.cells.get(k);
           if (cell && cell.f === undefined) {
             delete cell.v;
-            if (!cell.s && !cell.link && !cell.note) sheet.cells.delete(k);
+            if ((!cell.s || cell.s === defaultId) && !cell.link && !cell.note) sheet.cells.delete(k);
           }
         }
     sheet.markExtentStale();
@@ -1942,22 +2180,15 @@ export async function importOds(bytes: Uint8Array): Promise<{ wb: Workbook; warn
         let r = 0;
         while (c < MAX_COLS - 1 && x >= sheet.colWidth(c) && sheet.colWidth(c) > 0) x -= sheet.colWidth(c++);
         while (r < MAX_ROWS - 1 && y >= sheet.rowHeight(r) && sheet.rowHeight(r) > 0) y -= sheet.rowHeight(r++);
-        const before = sheet.images.length;
-        readFrame(fr, sheet, r, c);
-        if (sheet.images.length > before) {
-          const img = sheet.images[sheet.images.length - 1];
-          img.anchor.dx = x;
-          img.anchor.dy = y;
-        }
+        readFrame(fr, sheet, r, c, x, y);
       }
 
     // conditional formatting
     for (const block of cfBlocks)
       for (const f of kids(block)) {
         if (f.localName !== 'conditional-format') continue;
-        const ranges = (at(f, NS.calcext, 'target-range-address') ?? '')
-          .split(/\s+/)
-          .map((a) => (a ? parseRangeAddress(a)?.range : undefined))
+        const ranges = splitRangeList(at(f, NS.calcext, 'target-range-address') ?? '')
+          .map((a) => parseRangeAddress(a)?.range)
           .filter((r): r is Range => !!r);
         if (!ranges.length) continue;
         for (const rule of kids(f)) {
@@ -2020,7 +2251,7 @@ export async function importOds(bytes: Uint8Array): Promise<{ wb: Workbook; warn
   for (const block of kids(spreadsheet)) if (block.localName === 'named-expressions' && block.namespaceURI === NS.table) readNames(block, wb, undefined);
 
   // filters
-  for (const db of descendants(content, NS.table, 'database-range')) {
+  for (const db of kids(child(spreadsheet, NS.table, 'database-ranges') ?? spreadsheet).filter((k) => k.localName === 'database-range')) {
     if (at(db, NS.table, 'display-filter-buttons') !== 'true') continue;
     const target = parseRangeAddress(at(db, NS.table, 'target-range-address') ?? '');
     if (!target) continue;
@@ -2034,15 +2265,17 @@ export async function importOds(bytes: Uint8Array): Promise<{ wb: Workbook; warn
   if (settings) readSettings(settings, wb, sheetByName);
 
   // properties
-  const metaDoc = parse('meta.xml');
-  if (metaDoc) {
-    const text = (ns: string, name: string) => descendants(metaDoc, ns, name)[0]?.textContent?.trim() || undefined;
+  // (flat files keep office:meta next to the body, where notes also carry dc:creator)
+  const metaRoot = (parse('meta.xml') ?? content).documentElement;
+  const metaEl = metaRoot ? child(metaRoot, NS.office, 'meta') : undefined;
+  if (metaEl) {
+    const text = (ns: string, name: string) => kids(metaEl).find((k) => k.namespaceURI === ns && k.localName === name)?.textContent?.trim() || undefined;
     const created = text(NS.meta, 'creation-date');
     wb.props = {
       title: text(NS.dc, 'title'),
       author: text(NS.meta, 'initial-creator') ?? text(NS.dc, 'creator'),
       created: created && !Number.isNaN(Date.parse(created)) ? Date.parse(created) : undefined,
-      company: descendants(metaDoc, NS.meta, 'user-defined').find((u) => at(u, NS.meta, 'name') === 'Company')?.textContent || undefined,
+      company: kids(metaEl).find((u) => u.localName === 'user-defined' && at(u, NS.meta, 'name') === 'Company')?.textContent || undefined,
     };
   }
   if (!wb.sheets.length) wb.addSheet();
@@ -2114,8 +2347,9 @@ function filterColumnsIn(db: Element, c1: number): AutoFilter['columns'] {
 }
 
 function readSettings(settings: Document, wb: Workbook, sheetByName: Map<string, Sheet>): void {
-  const sets = descendants(settings, 'urn:oasis:names:tc:opendocument:xmlns:config:1.0', 'config-item-set');
   const CONFIG = 'urn:oasis:names:tc:opendocument:xmlns:config:1.0';
+  const holder = settings.documentElement ? child(settings.documentElement, NS.office, 'settings') : undefined;
+  const sets = holder ? kids(holder).filter((k) => k.localName === 'config-item-set') : [];
   const view = sets.find((s) => at(s, CONFIG, 'name') === 'ooo:view-settings');
   if (!view) return;
   const views = kids(view).find((k) => k.localName === 'config-item-map-indexed' && at(k, CONFIG, 'name') === 'Views');

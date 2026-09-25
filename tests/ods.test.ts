@@ -4,8 +4,10 @@ import { strToU8, zipSync } from 'fflate';
 import { fromOdsFormula, toOdsFormula } from '../src/sheets/formats/odsFormula';
 import { numFmtToOds, odsToNumFmt, odsValueType } from '../src/sheets/formats/odsNumber';
 import { exportOds, importOds, odsDateToSerial, odsTimeToSerial, serialToOdsDate, serialToOdsTime } from '../src/sheets/formats/ods';
+import { splitContent } from '../src/sheets/formats/odsScan';
+import { strFromU8, unzipSync } from 'fflate';
 import { formatValue } from '../src/sheets/format/numfmt';
-import { Workbook, type Sheet } from '../src/sheets/model/workbook';
+import { Workbook, workbookToJSON, type Sheet } from '../src/sheets/model/workbook';
 import { cellKey, parseAddr } from '../src/sheets/model/address';
 import { SheetDoc } from '../src/sheets/doc';
 import type { Cell } from '../src/sheets/model/types';
@@ -201,10 +203,17 @@ function sampleBook(): Workbook {
   put(o, 'A1', { v: 1 });
   put(o, 'A2', { v: 2 });
   put(o, 'B1', { v: 'Line one\nLine two', s: wb.styleId({ wrap: true }) });
+  s.charts.push({ id: 'c1', type: 'column', source: 'Data!$A$1:$B$4', title: 'Amounts', legend: 'bottom', palette: 'office', anchor: { r: 15, c: 1, dx: 4, dy: 3 }, w: 420, h: 260 });
+  s.charts.push({ id: 'c2', type: 'line', source: "'Other sheet'!$A$1:$A$2", legend: 'none', smooth: true, xTitle: 'Step', yTitle: 'Value', anchor: { r: 15, c: 8, dx: 0, dy: 0 }, w: 360, h: 240 });
+  s.charts.push({ id: 'c3', type: 'pie', source: 'Data!$A$1:$B$4', legend: 'right', dataLabels: true, palette: 'vivid', anchor: { r: 30, c: 1, dx: 0, dy: 0 }, w: 320, h: 240 });
+  s.charts.push({ id: 'c4', type: 'bar', source: 'Data!$A$1:$D$4', stacked: 'percent', gridlines: false, anchor: { r: 30, c: 8, dx: 0, dy: 0 }, w: 360, h: 240 });
+  s.images.push({ id: 'i1', src: PIXEL, anchor: { r: 12, c: 3, dx: 6, dy: 2 }, w: 80, h: 60, alt: 'A dot' });
   wb.props = { title: 'ODS test', author: 'Affice' };
   wb.activeSheet = 0;
   return wb;
 }
+
+const PIXEL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 
 describe('OpenDocument spreadsheet files', () => {
   it('writes a valid package', async () => {
@@ -271,10 +280,33 @@ describe('OpenDocument spreadsheet files', () => {
       { name: 'Rate', ref: 'Data!$B$4', sheet: undefined },
       { name: 'Double', ref: 'Data!$B$2*2', sheet: undefined },
     ]);
+    // charts and pictures
+    const chartKeys = (c: object) => {
+      const { id: _id, ...rest } = c as { id: string };
+      return rest;
+    };
+    expect(s.charts.map(chartKeys)).toEqual([
+      { type: 'column', source: 'Data!$A$1:$B$4', seriesInRows: false, title: 'Amounts', legend: 'bottom', palette: 'office', anchor: { r: 15, c: 1, dx: 4, dy: 3 }, w: 420, h: 260 },
+      { type: 'line', source: "'Other sheet'!$A$1:$A$2", seriesInRows: false, legend: 'none', smooth: true, xTitle: 'Step', yTitle: 'Value', palette: 'affice', anchor: { r: 15, c: 8, dx: 0, dy: 0 }, w: 360, h: 240 },
+      { type: 'pie', source: 'Data!$A$1:$B$4', seriesInRows: false, legend: 'right', dataLabels: true, palette: 'vivid', anchor: { r: 30, c: 1, dx: 0, dy: 0 }, w: 320, h: 240 },
+      { type: 'bar', source: 'Data!$A$1:$D$4', seriesInRows: false, stacked: 'percent', gridlines: false, legend: 'bottom', palette: 'affice', anchor: { r: 30, c: 8, dx: 0, dy: 0 }, w: 360, h: 240 },
+    ]);
+    expect(s.images.map(chartKeys)).toEqual([{ src: PIXEL, anchor: { r: 12, c: 3, dx: 6, dy: 2 }, w: 80, h: 60, alt: 'A dot' }]);
     expect(o).toMatchObject({ tabColor: '#e5484d', hidden: true, protection: { enabled: true } });
     expect(o.view.showGrid).toBe(false);
     expect(cell(o, 'B1')).toMatchObject({ v: 'Line one\nLine two', style: { wrap: true } });
     expect(wb.props).toMatchObject({ title: 'ODS test', author: 'Affice' });
+  });
+
+  it('streams rows the same way the DOM reads them', async () => {
+    const bytes = exportOds(new SheetDoc(sampleBook()));
+    // the fast path applies to our files…
+    expect(splitContent(strFromU8(unzipSync(bytes)['content.xml']))).not.toBeNull();
+    // …and gives the same workbook as reading everything through the DOM
+    const fast = await importOds(bytes);
+    const dom = await importOds(bytes, { fast: false });
+    const json = (wb: Workbook) => JSON.stringify({ ...workbookToJSON(wb), sheets: workbookToJSON(wb).sheets.map((sh) => ({ ...sh, cf: sh.cf.map((c) => ({ ...c, id: '' })), validations: sh.validations.map((v) => ({ ...v, id: '' })), charts: sh.charts.map((c) => ({ ...c, id: '' })), images: sh.images.map((i) => ({ ...i, id: '' })) })) });
+    expect(json(fast.wb)).toBe(json(dom.wb));
   });
 
   it('reads LibreOffice-style repeats, inherited styles and legacy conditions', async () => {
@@ -310,6 +342,7 @@ describe('OpenDocument spreadsheet files', () => {
     </table:table></office:spreadsheet></office:body></office:document-content>`;
     const zip = zipSync({ mimetype: strToU8('application/vnd.oasis.opendocument.spreadsheet'), 'content.xml': strToU8(content), 'styles.xml': strToU8(styles) });
     const { wb } = await importOds(zip);
+    expect(JSON.stringify(workbookToJSON((await importOds(zip, { fast: false })).wb))).toBe(JSON.stringify(workbookToJSON(wb)));
     const s = wb.sheets[0];
     const at = (a1: string) => {
       const p = parseAddr(a1)!;
@@ -322,7 +355,7 @@ describe('OpenDocument spreadsheet files', () => {
     expect(at('B3')).toEqual({ v: true, s: wb.styleId({ font: 'Liberation Sans', size: 10 }) });
     // a matrix formula keeps its formula; the values it spilled are dropped
     expect(at('C3')?.f).toBe('A1:B1*2');
-    expect(at('D3')?.v).toBeUndefined();
+    expect(at('D3')).toBeUndefined();
     // the most common sizes become the defaults
     expect(s.defaultColWidth).toBe(85);
     expect(s.defaultRowHeight).toBe(17);

@@ -10,7 +10,7 @@ import type { Border, BorderStyle, CellStyle, CondFormat, CompareOp, Validation,
 import type { SheetDoc } from '../doc';
 import { fromExcelFormula, toExcelFormula } from './excelFormula';
 import { injectXlsxCharts, readXlsxCharts, type ChartToWrite } from './xlsxCharts';
-import { resolveSource } from '../charts/chartConfig';
+import { chartLayout } from '../charts/chartConfig';
 
 type ExcelJS = typeof ExcelJSNS;
 let mod: Promise<ExcelJS> | null = null;
@@ -678,33 +678,31 @@ function chartsToWrite(doc: SheetDoc, sheet: Sheet): ChartToWrite[] {
     return { i, off: px - pos };
   };
   for (const spec of sheet.charts) {
-    const src = resolveSource(doc, spec, sheet);
-    if (!src) continue;
-    const q = /^[A-Za-z_][\w.]*$/.test(src.sheet.name) ? src.sheet.name : `'${src.sheet.name.replace(/'/g, "''")}'`;
-    const rows = src.r2 - src.r1 + 1;
-    const cols = src.c2 - src.c1 + 1;
-    const byRows = spec.seriesInRows ?? cols > rows;
-    const v0 = doc.value(src.sheet, src.r1, src.c1 + 1);
-    const headerRow = byRows ? typeof doc.value(src.sheet, src.r1 + 1, src.c1) === 'string' : typeof v0 === 'string' || (v0 === undefined && typeof doc.value(src.sheet, src.r1, src.c1) !== 'number');
-    const firstColText = byRows ? typeof doc.value(src.sheet, src.r1, src.c1 + 1) === 'string' : typeof doc.value(src.sheet, src.r1 + (headerRow ? 1 : 0), src.c1) === 'string' || spec.type === 'scatter';
-    const ref = (r1: number, c1: number, r2: number, c2: number) => `${q}!$${colName(c1)}$${r1 + 1}${r1 === r2 && c1 === c2 ? '' : `:$${colName(c2)}$${r2 + 1}`}`;
+    // the same reading of the source as the chart on screen
+    const layout = chartLayout(doc, spec, sheet);
+    if (!layout) continue;
+    const { byRows, headerRow, headerCol, grid } = layout;
+    const q = /^[A-Za-z_][\w.]*$/.test(layout.sheet.name) ? layout.sheet.name : `'${layout.sheet.name.replace(/'/g, "''")}'`;
+    const R = grid.length;
+    const C = grid[0]?.length ?? 0;
+    const start = headerRow ? 1 : 0;
+    const pos = (i: number, j: number) => (byRows ? { r: layout.r1 + j, c: layout.c1 + i } : { r: layout.r1 + i, c: layout.c1 + j });
+    const ref = (i1: number, j1: number, i2: number, j2: number) => {
+      const a = pos(i1, j1);
+      const b = pos(i2, j2);
+      const [r1, c1, r2, c2] = [Math.min(a.r, b.r), Math.min(a.c, b.c), Math.max(a.r, b.r), Math.max(a.c, b.c)];
+      return `${q}!$${colName(c1)}$${r1 + 1}${r1 === r2 && c1 === c2 ? '' : `:$${colName(c2)}$${r2 + 1}`}`;
+    };
     const series: ChartToWrite['series'] = [];
-    if (!byRows) {
-      const dr1 = src.r1 + (headerRow ? 1 : 0);
-      for (let c = src.c1 + (firstColText ? 1 : 0); c <= src.c2; c++)
-        series.push({ name: headerRow ? ref(src.r1, c, src.r1, c) : undefined, cat: firstColText ? ref(dr1, src.c1, src.r2, src.c1) : undefined, val: ref(dr1, c, src.r2, c) });
-    } else {
-      const dc1 = src.c1 + (headerRow ? 1 : 0);
-      for (let r = src.r1 + (firstColText ? 1 : 0); r <= src.r2; r++)
-        series.push({ name: headerRow ? ref(r, src.c1, r, src.c1) : undefined, cat: firstColText ? ref(src.r1, dc1, src.r1, src.c2) : undefined, val: ref(r, dc1, r, src.c2) });
-    }
+    if (R > start)
+      for (let j = headerCol ? 1 : 0; j < C; j++) series.push({ name: headerRow ? ref(0, j, 0, j) : undefined, cat: headerCol ? ref(start, 0, R - 1, 0) : undefined, val: ref(start, j, R - 1, j) });
     if (!series.length) continue;
     const x0 = colPos(spec.anchor.c) + spec.anchor.dx;
     let y0 = 0;
     for (let i = 0; i < spec.anchor.r; i++) y0 += sheet.rowHeight(i);
     y0 += spec.anchor.dy;
     const end = { c: cellAt(x0 + spec.w, 'c'), r: cellAt(y0 + spec.h, 'r') };
-    out.push({ spec, series, from: { c: spec.anchor.c, r: spec.anchor.r, dx: spec.anchor.dx, dy: spec.anchor.dy }, to: { c: end.c.i, r: end.r.i, dx: end.c.off, dy: end.r.off } });
+    out.push({ spec, series, points: R - start, from: { c: spec.anchor.c, r: spec.anchor.r, dx: spec.anchor.dx, dy: spec.anchor.dy }, to: { c: end.c.i, r: end.r.i, dx: end.c.off, dy: end.r.off } });
   }
   return out;
 }
