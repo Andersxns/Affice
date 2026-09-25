@@ -11,7 +11,10 @@ Documents, Sheets and Slides that open and save Microsoft Office and OpenDocumen
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux-lightgrey)
 
-<img src="docs/screenshots/home.png" alt="The Affice dashboard" width="900">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/home-dark.png">
+  <img src="docs/screenshots/home.png" alt="The Affice dashboard" width="900">
+</picture>
 
 </div>
 
@@ -29,7 +32,10 @@ Documents, Sheets and Slides that open and save Microsoft Office and OpenDocumen
 
 ## Download and install
 
-Get the latest version from the [**Releases page**](https://github.com/andersxns/affice/releases/latest).
+Installers for Windows and Linux are built automatically by the [Build workflow](https://github.com/andersxns/affice/actions/workflows/build.yml). There are two places to get them:
+
+- **Releases**: each version is published on the [**Releases page**](https://github.com/andersxns/affice/releases/latest), with every file listed below and a `SHA256SUMS.txt` to check your download.
+- **Latest build**: every change to the default branch is built too. Open the newest run with a green tick in the [Build workflow](https://github.com/andersxns/affice/actions/workflows/build.yml), scroll down to **Artifacts** and download **affice-Windows** or **affice-Linux**. Each is a zip with all the files below for that system. You need to be signed in to GitHub, and builds are kept for 90 days.
 
 ### Windows (10 and 11)
 
@@ -110,8 +116,10 @@ A home screen to start a blank document, spreadsheet or presentation, choose fro
 - Light and dark themes (or follow the system), accent colours and a simplified single-row ribbon
 - A ribbon that fits small screens: groups tighten and fold into buttons instead of disappearing
 - Autosave and crash recovery, plus optional automatic saving back to the original file
-- Fonts that match Office's metrics (Carlito for Calibri, Caladea for Cambria, Arimo for Arial, Tinos for Times New Roman, Cousine for Courier New) are built in, so Office documents keep their line and page breaks even on Linux
+- Fonts that match Office's metrics (Carlito for Calibri, Caladea for Cambria, Arimo for Arial, Tinos for Times New Roman, Cousine for Courier New) are built in, and they also stand in for LibreOffice's Liberation fonts, so Office and LibreOffice documents keep their line and page breaks even when those fonts aren't installed
 - Works fully offline and never phones home
+
+<img src="docs/screenshots/dark.png" alt="Affice Slides in the dark theme" width="820">
 
 ## File formats
 
@@ -167,7 +175,7 @@ Other useful scripts:
 | --- | --- |
 | `npm run dev:web` | Runs the interface in a browser at http://localhost:5173 (no desktop features) |
 | `npm run typecheck` | Type-checks the app and the Electron main process |
-| `npm test` | Runs the unit tests (formula engine, number formats) |
+| `npm test` | Runs the unit tests (formula engine, number formats, OpenDocument spreadsheet and presentation files) |
 | `npm run build` | Builds the renderer and the Electron main process into `dist/` and `dist-electron/` |
 | `npm run dist:win` | Builds the Windows installer and portable app into `release/` |
 | `npm run dist:linux` | Builds the AppImage, `.deb`, `.rpm` and `.tar.gz` into `release/` (`.rpm` needs `rpmbuild`) |
