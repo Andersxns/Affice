@@ -454,7 +454,8 @@ if (gotLock) {
     applySpellLanguages(getSettings().spellcheckLanguages);
 
     nativeTheme.on('updated', () => {
-      mainWindow?.webContents.send('theme:system-changed', nativeTheme.shouldUseDarkColors);
+      // only the system's theme: a light or dark choice in Settings forces nativeTheme too
+      if (nativeTheme.themeSource === 'system') mainWindow?.webContents.send('theme:system-changed', nativeTheme.shouldUseDarkColors);
     });
 
     registerIpc();

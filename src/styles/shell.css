@@ -884,9 +884,11 @@ button.status-item:hover {
 .bs-card-icon {
   display: grid;
   place-items: center;
-  width: 38px;
+  min-width: 38px;
   height: 38px;
+  padding: 0 6px;
   flex: none;
+  white-space: nowrap;
   border-radius: var(--radius);
   background: var(--surface-3);
   color: var(--app-color, var(--accent));

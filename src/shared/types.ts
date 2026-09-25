@@ -173,6 +173,8 @@ export interface AfficeBridge {
   settings: {
     get(): Promise<Settings>;
     set(patch: Partial<Settings>): Promise<Settings>;
+    /** The system switched between light and dark. */
+    onSystemThemeChange(cb: (dark: boolean) => void): () => void;
   };
   output: {
     pdf(job: PdfJob): Promise<Uint8Array>;

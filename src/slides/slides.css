@@ -1437,8 +1437,15 @@
   align-items: center;
   gap: 12px;
   padding: 10px 16px;
+  /* leave room for the native window buttons (Window Controls Overlay) */
+  padding-right: calc(16px + 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
   border-bottom: 1px solid #2a2d36;
   font-size: 13px;
+  /* it covers the title bar, so the window moves by it */
+  -webkit-app-region: drag;
+}
+.presenter-top button {
+  -webkit-app-region: no-drag;
 }
 .presenter-timer {
   display: inline-flex;

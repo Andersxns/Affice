@@ -54,6 +54,7 @@ const bridge: AfficeBridge = {
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),
     set: (patch) => ipcRenderer.invoke('settings:set', patch),
+    onSystemThemeChange: (cb) => listen<[boolean]>('theme:system-changed', cb),
   },
   output: {
     pdf: (job) => ipcRenderer.invoke('output:pdf', job),

@@ -31,10 +31,14 @@ export const useSettings = create<SettingsState>((set, get) => ({
   },
 }));
 
-mq?.addEventListener('change', (e) => {
-  useSettings.setState({ systemDark: e.matches });
-  applySettings(useSettings.getState().settings, e.matches);
-});
+function setSystemDark(dark: boolean): void {
+  if (useSettings.getState().systemDark === dark) return;
+  useSettings.setState({ systemDark: dark });
+  applySettings(useSettings.getState().settings, dark);
+}
+mq?.addEventListener('change', (e) => setSystemDark(e.matches));
+// the desktop app also hears it from the main process, as Chromium doesn't always pass it on
+api.settings.onSystemThemeChange(setSystemDark);
 
 export function isDark(s: Settings, systemDark: boolean): boolean {
   return s.theme === 'dark' || (s.theme === 'system' && systemDark);
@@ -83,5 +87,15 @@ export function applySettings(s: Settings, systemDark: boolean): void {
   } catch {
     /* ignore */
   }
+  setTitleBarTheme(dark);
+}
+
+/** Colours the native window buttons like the app's title bar (views that cover it change them). */
+export function setTitleBarTheme(dark = currentlyDark()): void {
   api.window.setTitleBarColors(dark ? '#15171c' : '#eef1f8', dark ? '#e8eaf0' : '#1d2433');
+}
+
+function currentlyDark(): boolean {
+  const s = useSettings.getState();
+  return isDark(s.settings, s.systemDark);
 }

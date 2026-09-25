@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight, Eraser, Grid2x2, Highlighter, MonitorUp, MousePointer2, PenLine, Presentation as PresIcon, Square, Timer, X, Zap } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
+import { setTitleBarTheme } from '@/app/settings';
 import { api, isElectron } from '@/lib/platform';
 import { openContextMenu } from '@/ui/menu';
 import type { Presentation, Slide } from '../model';
@@ -659,6 +660,11 @@ function PresenterView({ pres, show, onExit, onLink, setInk, setLaser }: { pres:
     return i < pres.slides.length ? i : null;
   })();
   useKeys(show, pres, onExit, useMemo(() => ({ grid: () => setGrid((g) => !g) }), []));
+  // the window buttons sit on the presenter's dark top bar
+  useEffect(() => {
+    api.window.setTitleBarColors('#16181e', '#e8eaf0');
+    return () => setTitleBarTheme();
+  }, []);
   const audienceWin = host?.ownerDocument.defaultView ?? null;
   return createPortal(
     <div className="presenter-root">

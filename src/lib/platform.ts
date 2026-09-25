@@ -200,6 +200,8 @@ const webApi: AfficeBridge = {
       LS.set('affice.settings', next);
       return next;
     },
+    // the browser reports system theme changes through prefers-color-scheme
+    onSystemThemeChange: () => () => undefined,
   },
   output: {
     pdf: async () => {
