@@ -78,7 +78,7 @@ const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
 
 /* ------------------------------------------------------------- tokens */
 
-type Tok =
+export type FormatTok =
   | { t: 'lit'; v: string }
   | { t: 'digit'; v: '0' | '#' | '?' }
   | { t: 'point' }
@@ -93,8 +93,8 @@ type Tok =
   | { t: 'subsec'; len: number }
   | { t: 'general' };
 
-interface Section {
-  toks: Tok[];
+export interface FormatSection {
+  toks: FormatTok[];
   color?: string;
   cond?: { op: string; v: number };
   isDate: boolean;
@@ -140,9 +140,9 @@ function splitSections(fmt: string): string[] {
   return out;
 }
 
-function parseSection(src: string): Section {
-  const toks: Tok[] = [];
-  const sec: Section = { toks, isDate: false, isText: false, isGeneral: false, hasAmPm: false };
+function parseSection(src: string): FormatSection {
+  const toks: FormatTok[] = [];
+  const sec: FormatSection = { toks, isDate: false, isText: false, isGeneral: false, hasAmPm: false };
   let i = 0;
   const lower = src.toLowerCase();
   while (i < src.length) {
@@ -277,26 +277,27 @@ function parseSection(src: string): Section {
   for (let k = 0; k < toks.length; k++) {
     const t = toks[k];
     if (t.t !== 'date' || !t.v.startsWith('m') || t.v.length > 2) continue;
-    let prev: Tok | undefined;
+    let prev: FormatTok | undefined;
     for (let p = k - 1; p >= 0; p--) if (toks[p].t === 'date' || toks[p].t === 'elapsed') {
       prev = toks[p];
       break;
     }
-    let next: Tok | undefined;
+    let next: FormatTok | undefined;
     for (let n = k + 1; n < toks.length; n++) if (toks[n].t === 'date' || toks[n].t === 'elapsed') {
       next = toks[n];
       break;
     }
-    const isH = (x?: Tok) => (x?.t === 'date' && x.v.startsWith('h')) || (x?.t === 'elapsed' && x.v === 'h');
-    const isS = (x?: Tok) => (x?.t === 'date' && x.v.startsWith('s')) || (x?.t === 'elapsed' && x.v === 's');
+    const isH = (x?: FormatTok) => (x?.t === 'date' && x.v.startsWith('h')) || (x?.t === 'elapsed' && x.v === 'h');
+    const isS = (x?: FormatTok) => (x?.t === 'date' && x.v.startsWith('s')) || (x?.t === 'elapsed' && x.v === 's');
     if (isH(prev) || isS(next)) toks[k] = { t: 'date', v: t.v === 'mm' ? 'MM' : 'M' };
   }
   return sec;
 }
 
-const cache = new Map<string, Section[]>();
+const cache = new Map<string, FormatSection[]>();
 
-function sectionsFor(fmt: string): Section[] {
+/** A format code split into sections (positive; negative; zero; text) of tokens. */
+export function sectionsFor(fmt: string): FormatSection[] {
   let s = cache.get(fmt);
   if (!s) {
     s = splitSections(fmt).map(parseSection);
@@ -359,7 +360,7 @@ function approxFraction(x: number, maxDen: number): [number, number] {
   return [bestN / g, bestD / g];
 }
 
-function formatNumberSection(sec: Section, value: number, negSection: boolean): string {
+function formatNumberSection(sec: FormatSection, value: number, negSection: boolean): string {
   const toks = sec.toks;
   let v = value;
   const percents = toks.filter((t) => t.t === 'percent').length;
@@ -389,7 +390,7 @@ function formatNumberSection(sec: Section, value: number, negSection: boolean): 
     let numStart = slashIdx - 1;
     while (numStart > 0 && toks[numStart - 1].t === 'digit') numStart--;
     const hasWhole = toks.slice(0, numStart).some((t) => t.t === 'digit');
-    const denToks: Tok[] = [];
+    const denToks: FormatTok[] = [];
     let k = slashIdx + 1;
     while (k < toks.length && (toks[k].t === 'digit' || (toks[k].t === 'lit' && (toks[k] as { v: string }).v.startsWith('\u0000')))) denToks.push(toks[k++]);
     const fixedDen = denToks.find((t) => t.t === 'lit') as { v: string } | undefined;
@@ -543,7 +544,7 @@ function formatNumberSection(sec: Section, value: number, negSection: boolean): 
 
 /* ------------------------------------------------------------ dates */
 
-function formatDateSection(sec: Section, value: number): string {
+function formatDateSection(sec: FormatSection, value: number): string {
   const hasSub = sec.toks.find((t) => t.t === 'subsec') as { len: number } | undefined;
   // round to displayed precision
   const precision = hasSub ? Math.pow(10, hasSub.len) : 1;
@@ -661,7 +662,7 @@ export function formatValue(value: unknown, fmt: string | undefined | null): For
   if (f === '@') return { text: formatGeneral(value) };
   const secs = sectionsFor(f).filter((s) => !s.isText || s.toks.some((t) => t.t !== 'text' && t.t !== 'lit'));
   const all = sectionsFor(f);
-  let sec: Section;
+  let sec: FormatSection;
   let negSection = false;
   const conds = all.filter((s) => s.cond);
   if (conds.length) {

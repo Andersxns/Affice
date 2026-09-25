@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type ExcelJSNS from 'exceljs';
+import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
+import { escapeXml } from '@/lib/utils';
 import { FErr, isErr, asErr, type Scalar } from '../engine/values';
 import { SHORT_DATE } from '../format/numfmt';
 import { cellKey, colName, keyCol, keyRow, MAX_COLS, MAX_ROWS, parseRange, rangeName, type Range } from '../model/address';
@@ -572,7 +574,7 @@ function valueOut(v: Scalar | undefined): any {
   return v;
 }
 
-function cfOut(cf: CondFormat): any | null {
+function cfOut(cf: CondFormat, priority: number): any | null {
   const style: any = {};
   if (cf.style) {
     const s = cf.style;
@@ -586,7 +588,7 @@ function cfOut(cf: CondFormat): any | null {
     if (s.fill) style.fill = { type: 'pattern', pattern: 'solid', bgColor: argb(s.fill) };
     if (s.numFmt) style.numFmt = s.numFmt;
   }
-  const base = { priority: 1, style, stopIfTrue: cf.stop || undefined };
+  const base = { priority, style, stopIfTrue: cf.stop || undefined };
   const first = cf.ranges[0];
   const tl = `${colName(first.c1)}${first.r1 + 1}`;
   switch (cf.type) {
@@ -623,14 +625,14 @@ function cfOut(cf: CondFormat): any | null {
     case 'colorScale': {
       const cols = cf.colors?.length ? cf.colors : ['#f8696b', '#ffeb84', '#63be7b'];
       const cfvo = cols.length === 3 ? [{ type: 'min' }, { type: 'percentile', value: 50 }, { type: 'max' }] : [{ type: 'min' }, { type: 'max' }];
-      return { priority: 1, type: 'colorScale', cfvo, color: cols.map((c) => argb(c)) };
+      return { priority, type: 'colorScale', cfvo, color: cols.map((c) => argb(c)) };
     }
     case 'dataBar':
-      return { priority: 1, type: 'dataBar', cfvo: [{ type: 'min' }, { type: 'max' }], color: argb(cf.colors?.[0] ?? '#638ec6'), showValue: cf.showValue !== false, gradient: true };
+      return { priority, type: 'dataBar', cfvo: [{ type: 'min' }, { type: 'max' }], color: argb(cf.colors?.[0] ?? '#638ec6'), showValue: cf.showValue !== false, gradient: true };
     case 'iconSet': {
       const n = Number((cf.iconSet ?? '3Arrows')[0]);
       const cfvo = Array.from({ length: n }, (_, i) => ({ type: 'percent', value: Math.round((i * 100) / n) }));
-      return { priority: 1, type: 'iconSet', iconSet: cf.iconSet === '3TrafficLights' ? '3TrafficLights1' : cf.iconSet ?? '3Arrows', cfvo, showValue: cf.showValue !== false };
+      return { priority, type: 'iconSet', iconSet: cf.iconSet === '3TrafficLights' ? '3TrafficLights1' : cf.iconSet ?? '3Arrows', cfvo, showValue: cf.showValue !== false };
     }
   }
   return null;
@@ -728,6 +730,7 @@ export async function exportXlsx(doc: SheetDoc): Promise<Uint8Array> {
     return s;
   };
   const charts = new Map<number, ChartToWrite[]>();
+  const cfWritten = new Map<number, CondFormat[]>();
 
   src.sheets.forEach((sheet, index) => {
     const v = sheet.view;
@@ -801,12 +804,15 @@ export async function exportXlsx(doc: SheetDoc): Promise<Uint8Array> {
         /* overlapping merge */
       }
     }
-    // conditional formatting
-    for (const cf of sheet.cf) {
-      const rule = cfOut(cf);
-      if (!rule) continue;
+    // conditional formatting (earlier rules win, like in the editor)
+    const written: CondFormat[] = [];
+    sheet.cf.forEach((cf, i) => {
+      const rule = cfOut(cf, i + 1);
+      if (!rule) return;
       ws.addConditionalFormatting({ ref: cf.ranges.map(rangeName).join(' '), rules: [rule] } as any);
-    }
+      written.push(cf);
+    });
+    cfWritten.set(index, written);
     // validation
     for (const dv of sheet.validations) {
       const rule = dvOut(dv);
@@ -843,6 +849,62 @@ export async function exportXlsx(doc: SheetDoc): Promise<Uint8Array> {
   }
   xwb.views = [{ x: 0, y: 0, width: 28800, height: 17000, firstSheet: 0, activeTab: src.activeSheet, visibility: 'visible' } as any];
   const buf = new Uint8Array((await xwb.xlsx.writeBuffer()) as ArrayBuffer);
-  return injectXlsxCharts(buf, charts);
+  return injectXlsxCharts(addFilterNames(fixConditionalFormats(buf, cfWritten), src), charts);
+}
+
+/** Excel records each auto-filter in a hidden _FilterDatabase name; LibreOffice drops filters without it. */
+function addFilterNames(bytes: Uint8Array, wb: Workbook): Uint8Array {
+  const names = wb.sheets
+    .map((s, i) => {
+      if (!s.filter) return '';
+      const q = /^[A-Za-z_][\w.]*$/.test(s.name) ? s.name : `'${s.name.replace(/'/g, "''")}'`;
+      const r = s.filter.range;
+      return `<definedName name="_xlnm._FilterDatabase" localSheetId="${i}" hidden="1">${escapeXml(q)}!$${colName(r.c1)}$${r.r1 + 1}:$${colName(r.c2)}$${Math.min(r.r2, MAX_ROWS - 1) + 1}</definedName>`;
+    })
+    .join('');
+  if (!names) return bytes;
+  const zip = unzipSync(bytes);
+  const path = 'xl/workbook.xml';
+  if (!zip[path]) return bytes;
+  let xml = strFromU8(zip[path]);
+  if (xml.includes('_xlnm._FilterDatabase')) return bytes;
+  if (/<definedNames\s*\/>/.test(xml)) xml = xml.replace(/<definedNames\s*\/>/, `<definedNames>${names}</definedNames>`);
+  else if (xml.includes('<definedNames>')) xml = xml.replace('<definedNames>', `<definedNames>${names}`);
+  else xml = xml.replace('</sheets>', `</sheets><definedNames>${names}</definedNames>`);
+  zip[path] = strToU8(xml);
+  return zipSync(zip);
+}
+
+const TEXT_RULES: Partial<Record<CondFormat['type'], [type: string, operator: string]>> = {
+  text: ['containsText', 'containsText'],
+  notText: ['notContainsText', 'notContains'],
+  begins: ['beginsWith', 'beginsWith'],
+  ends: ['endsWith', 'endsWith'],
+};
+
+/**
+ * ExcelJS leaves out the text of "contains / begins with / ends with" rules, writes an invalid type for
+ * "does not contain" and adds an empty x14 extension to data bars: correct the rules in the sheet XML.
+ */
+function fixConditionalFormats(bytes: Uint8Array, perSheet: Map<number, CondFormat[]>): Uint8Array {
+  const needsFix = [...perSheet.values()].some((l) => l.some((cf) => TEXT_RULES[cf.type] || cf.type === 'dataBar'));
+  if (!needsFix) return bytes;
+  const zip = unzipSync(bytes);
+  for (const [index, rules] of perSheet) {
+    const path = `xl/worksheets/sheet${index + 1}.xml`;
+    if (!zip[path] || !rules.length) continue;
+    let n = 0;
+    const xml = strFromU8(zip[path])
+      .replace(/<cfRule\b([^>]*?)(\/?)>/g, (m, attrs: string, selfClose: string) => {
+        const cf = rules[n++];
+        const t = cf && TEXT_RULES[cf.type];
+        if (!t) return m;
+        const kept = attrs.replace(/\s(type|operator|text)="[^"]*"/g, '');
+        return `<cfRule type="${t[0]}"${kept} operator="${t[1]}" text="${escapeXml(cf.text ?? '')}"${selfClose}>`;
+      })
+      .replace(/(<cfRule\b[^>]*type="dataBar"[^>]*>[\s\S]*?)<extLst>[\s\S]*?<\/extLst>(\s*<\/cfRule>)/g, '$1$2');
+    zip[path] = strToU8(xml);
+  }
+  return zipSync(zip);
 }
 

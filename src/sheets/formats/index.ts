@@ -146,6 +146,10 @@ export async function loadWorkbook(source: TabSource | undefined): Promise<Loade
       const { importXlsx } = await import('./xlsx');
       return importXlsx(bytes);
     }
+    case 'ods': {
+      const { importOds } = await import('./ods');
+      return importOds(bytes);
+    }
     case 'afsheet':
       return { wb: parseAfsheet(bytes) };
     case 'csv':
@@ -224,7 +228,10 @@ export async function exportWorkbook(doc: SheetDoc, formatId: string, title: str
       const { exportXlsx } = await import('./xlsx');
       return exportXlsx(doc);
     }
-    case 'ods':
+    case 'ods': {
+      const { exportOds } = await import('./ods');
+      return exportOds(doc);
+    }
     case 'xls': {
       const { exportWithSheetJS } = await import('./sheetjs');
       return exportWithSheetJS(doc, formatId);
