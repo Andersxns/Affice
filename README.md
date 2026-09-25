@@ -195,6 +195,8 @@ Bug reports, ideas and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBU
 
 Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
 
+Signing starts once SignPath Foundation has accepted the project. Releases published before that aren't signed, and their notes say so.
+
 - **What is signed:** the Windows installers and portable app of each release, built by the [Build workflow](.github/workflows/build.yml) on GitHub-hosted runners from this repository's source code. Builds from other branches and pull requests aren't signed.
 - **Committers and reviewers:** [Andersxns](https://github.com/Andersxns). Changes from other contributors are reviewed by a committer before they are merged.
 - **Approvers:** [Andersxns](https://github.com/Andersxns). Every release is approved in SignPath before it is signed.
