@@ -63,6 +63,26 @@ Each editor is loaded on demand, so a change to Sheets doesn't make Documents sl
 
 Update `version` in `package.json`, write the release notes in `docs/releases/v1.2.0.md` (see the earlier versions there), commit, then push a tag such as `v1.2.0`. The Build workflow creates the Windows installers (x64, 32-bit and ARM64, plus a portable app) and the Linux packages (AppImage, .deb, .rpm and .tar.gz) and publishes them as a GitHub release with checksums.
 
+When code signing is set up, the workflow sends the Windows installers to SignPath and waits up to four hours for an approver to approve the signing request in SignPath, then publishes the release with the signed installers. If nobody approves it in time, re-run the failed jobs once you can.
+
+### Setting up code signing (once)
+
+Windows releases are signed through [SignPath Foundation](https://signpath.org), which signs open-source projects for free. Its conditions are on [signpath.org/terms](https://signpath.org/terms); the [code signing policy](README.md#code-signing-policy) in the README is the one it asks projects to publish.
+
+1. Make the repository public, then apply at [signpath.org/apply](https://signpath.org/apply).
+2. Turn on multi-factor authentication on GitHub and SignPath for everyone on the team.
+3. Once the project is accepted, in SignPath:
+   - add the predefined **GitHub.com** trusted build system to the organization and link it to the project;
+   - install the SignPath GitHub App on this repository;
+   - make [`.signpath/artifact-configuration.xml`](.signpath/artifact-configuration.xml) the project's default artifact configuration;
+   - create a CI user that can submit signing requests to the release signing policy, and copy its API token.
+4. In this repository's **Settings → Secrets and variables → Actions**, add:
+   - the secret `SIGNPATH_API_TOKEN`: the CI user's API token;
+   - the variable `SIGNPATH_ORGANIZATION_ID`: the SignPath organization ID;
+   - if yours differ from the defaults, the variables `SIGNPATH_PROJECT_SLUG` (`affice`) and `SIGNPATH_SIGNING_POLICY_SLUG` (`release-signing`).
+
+Until `SIGNPATH_ORGANIZATION_ID` is set, releases are published with unsigned Windows installers, and their notes say so. To try the whole process first, set `SIGNPATH_SIGNING_POLICY_SLUG` to your test signing policy and push a test tag.
+
 ## Reporting bugs
 
 Please include your operating system, the Affice version (**Home → About**), what you did, what you expected and what happened. If a file doesn't open or save correctly, attach a small sample file if you can share it.

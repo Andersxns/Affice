@@ -28,6 +28,7 @@ Documents, Sheets and Slides that open and save Microsoft Office and OpenDocumen
 - [Keyboard shortcuts](#keyboard-shortcuts)
 - [Build from source](#build-from-source)
 - [Contributing](#contributing)
+- [Code signing policy](#code-signing-policy)
 - [License](#license)
 
 ## Download and install
@@ -46,7 +47,7 @@ Installers for Windows and Linux are built automatically by the [Build workflow]
 | `Affice-Setup-<version>-arm64.exe` | Installer for Windows on ARM (Surface Pro X, Snapdragon laptops…). |
 | `Affice-Portable-<version>-x64.exe` | Runs without installing, from a folder or USB stick. |
 
-The installer lets you choose where Affice goes and whether it is installed just for you (no administrator rights needed) or for everyone. It adds Start menu and desktop shortcuts and lets Affice open `.docx`, `.xlsx`, `.pptx`, `.odt`, `.ods`, `.odp` and the other supported files. The installers aren't code-signed yet, so Windows SmartScreen may warn you the first time; choose **More info → Run anyway**.
+The installer lets you choose where Affice goes and whether it is installed just for you (no administrator rights needed) or for everyone. It adds Start menu and desktop shortcuts and lets Affice open `.docx`, `.xlsx`, `.pptx`, `.odt`, `.ods`, `.odp` and the other supported files. Windows SmartScreen warns about installers that aren't code-signed, such as the builds from the Actions tab: choose **More info → Run anyway**. Each release's notes say whether its installers are signed (see the [code signing policy](#code-signing-policy)).
 
 ### Linux
 
@@ -189,6 +190,16 @@ Pushing a tag such as `v1.0.1` makes the [Build workflow](.github/workflows/buil
 ## Contributing
 
 Bug reports, ideas and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for how the code is organised and how to get started.
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
+- **What is signed:** the Windows installers and portable app of each release, built by the [Build workflow](.github/workflows/build.yml) on GitHub-hosted runners from this repository's source code. Builds from other branches and pull requests aren't signed.
+- **Committers and reviewers:** [Andersxns](https://github.com/Andersxns). Changes from other contributors are reviewed by a committer before they are merged.
+- **Approvers:** [Andersxns](https://github.com/Andersxns). Every release is approved in SignPath before it is signed.
+
+**Privacy:** Affice will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it. It has no telemetry, ads or automatic update checks.
 
 ## License
 

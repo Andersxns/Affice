@@ -29,6 +29,14 @@ jobs:
         env:
           # the Electron binary is not needed to typecheck, test and bundle
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Check the tag matches the app version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "${GITHUB_REF_NAME#v}" != "$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match version $version in package.json"
+            exit 1
+          fi
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
@@ -81,10 +89,51 @@ jobs:
             release/*.rpm
             release/*.tar.gz
 
+  sign:
+    name: Sign Windows installers
+    needs: package
+    # releases only, once SignPath is set up (see "Setting up code signing" in CONTRIBUTING.md);
+    # every signing request is approved by hand in SignPath
+    if: startsWith(github.ref, 'refs/tags/v') && vars.SIGNPATH_ORGANIZATION_ID != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 250
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Find the unsigned installers
+        id: unsigned
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          id=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --jq '.artifacts[] | select(.name == "affice-Windows") | .id')
+          test -n "$id"
+          echo "artifact-id=$id" >> "$GITHUB_OUTPUT"
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - name: Sign with SignPath (waits for the request to be approved)
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'affice' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 14400
+          output-artifact-directory: signed
+          parameters: |
+            version: ${{ toJSON(steps.unsigned.outputs.version) }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: affice-Windows-signed
+          path: signed/*.exe
+          if-no-files-found: error
+
   release:
     name: Publish release
-    needs: package
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [package, sign]
+    # after signing, or with unsigned Windows installers while SignPath isn't set up
+    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') && needs.package.result == 'success' && (needs.sign.result == 'success' || needs.sign.result == 'skipped') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -94,17 +143,31 @@ jobs:
           sparse-checkout: docs/releases
       - uses: actions/download-artifact@v4
         with:
+          name: affice-Linux
           path: artifacts
-          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.sign.result == 'success' && 'affice-Windows-signed' || 'affice-Windows' }}
+          path: artifacts
       - name: Checksums
         run: cd artifacts && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
       - name: Release name and notes
         id: notes
+        env:
+          SIGNED: ${{ needs.sign.result == 'success' }}
         run: |
           echo "name=Affice ${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-          # a version's own notes (docs/releases/<tag>.md) go above the generated list of changes
-          if [ -f "docs/releases/${GITHUB_REF_NAME}.md" ]; then
-            echo "path=docs/releases/${GITHUB_REF_NAME}.md" >> "$GITHUB_OUTPUT"
+          # a version's own notes (docs/releases/<tag>.md) go above the generated list of changes;
+          # their "<!-- signing -->" line says whether the Windows installers are signed
+          notes="docs/releases/${GITHUB_REF_NAME}.md"
+          if [ -f "$notes" ]; then
+            if [ "$SIGNED" = true ]; then
+              signing='The Windows installers are code-signed: free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).'
+            else
+              signing="The Windows installers in this release aren't code-signed, so SmartScreen may warn you the first time: choose **More info → Run anyway**."
+            fi
+            sed "s|<!-- signing -->|$signing|" "$notes" > release-notes.md
+            echo "path=release-notes.md" >> "$GITHUB_OUTPUT"
           fi
       - uses: softprops/action-gh-release@v2
         with:

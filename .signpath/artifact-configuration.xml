@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SignPath artifact configuration for the Windows installers: the "affice-Windows" artifact of the
+  Build workflow (.github/workflows/build.yml). Set it as the project's default artifact
+  configuration in SignPath. The workflow passes the version from the release tag, and only
+  installers whose version info says Affice and that version are signed.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <!-- the installers for x64, 32-bit and ARM64 -->
+    <pe-file path="Affice-Setup-*.exe" max-matches="unbounded" product-name="Affice" product-version="${version}">
+      <authenticode-sign description="Affice" />
+    </pe-file>
+    <!-- the portable app -->
+    <pe-file path="Affice-Portable-*.exe" product-name="Affice" product-version="${version}">
+      <authenticode-sign description="Affice" />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>
