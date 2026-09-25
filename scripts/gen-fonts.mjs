@@ -1,6 +1,7 @@
 // Generates src/lib/fonts.generated.ts: a registry of bundled font faces (woff2 only).
-// Office fonts (Calibri, Cambria, Arial, Times New Roman, Courier New, Georgia) are aliased
-// to metric-compatible open fonts, but prefer the real font when it is installed locally.
+// Office fonts (Calibri, Cambria, Arial, Times New Roman, Courier New, Georgia) and LibreOffice's
+// defaults (Liberation Sans, Serif and Mono) are aliased to metric-compatible open fonts, but prefer
+// the real font when it is installed locally.
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -33,6 +34,7 @@ const FONTS = [
     aliases: [
       { family: 'Arial', locals: L(['Arial', 'ArialMT', 'Liberation Sans', 'LiberationSans'], ['Arial Bold', 'Arial-BoldMT', 'Liberation Sans Bold', 'LiberationSans-Bold'], ['Arial Italic', 'Arial-ItalicMT', 'Liberation Sans Italic', 'LiberationSans-Italic'], ['Arial Bold Italic', 'Arial-BoldItalicMT', 'Liberation Sans Bold Italic', 'LiberationSans-BoldItalic']) },
       { family: 'Helvetica', locals: L(['Helvetica', 'Arial', 'ArialMT'], ['Helvetica Bold', 'Helvetica-Bold', 'Arial Bold'], ['Helvetica Oblique', 'Helvetica-Oblique', 'Arial Italic'], ['Helvetica Bold Oblique', 'Helvetica-BoldOblique', 'Arial Bold Italic']) },
+      { family: 'Liberation Sans', locals: L(['Liberation Sans', 'LiberationSans'], ['Liberation Sans Bold', 'LiberationSans-Bold'], ['Liberation Sans Italic', 'LiberationSans-Italic'], ['Liberation Sans Bold Italic', 'LiberationSans-BoldItalic']) },
     ],
   },
   {
@@ -40,12 +42,14 @@ const FONTS = [
     aliases: [
       { family: 'Times New Roman', locals: L(['Times New Roman', 'TimesNewRomanPSMT', 'Liberation Serif', 'LiberationSerif'], ['Times New Roman Bold', 'TimesNewRomanPS-BoldMT', 'Liberation Serif Bold', 'LiberationSerif-Bold'], ['Times New Roman Italic', 'TimesNewRomanPS-ItalicMT', 'Liberation Serif Italic', 'LiberationSerif-Italic'], ['Times New Roman Bold Italic', 'TimesNewRomanPS-BoldItalicMT', 'Liberation Serif Bold Italic', 'LiberationSerif-BoldItalic']) },
       { family: 'Times', locals: L(['Times', 'Times New Roman', 'TimesNewRomanPSMT'], ['Times Bold', 'Times-Bold', 'Times New Roman Bold'], ['Times Italic', 'Times-Italic', 'Times New Roman Italic'], ['Times Bold Italic', 'Times-BoldItalic', 'Times New Roman Bold Italic']) },
+      { family: 'Liberation Serif', locals: L(['Liberation Serif', 'LiberationSerif'], ['Liberation Serif Bold', 'LiberationSerif-Bold'], ['Liberation Serif Italic', 'LiberationSerif-Italic'], ['Liberation Serif Bold Italic', 'LiberationSerif-BoldItalic']) },
     ],
   },
   {
     pkg: 'cousine', family: 'Cousine', category: 'mono', subsets: ALL_SUBSETS,
     aliases: [
       { family: 'Courier New', locals: L(['Courier New', 'CourierNewPSMT', 'Liberation Mono', 'LiberationMono'], ['Courier New Bold', 'CourierNewPS-BoldMT', 'Liberation Mono Bold', 'LiberationMono-Bold'], ['Courier New Italic', 'CourierNewPS-ItalicMT', 'Liberation Mono Italic', 'LiberationMono-Italic'], ['Courier New Bold Italic', 'CourierNewPS-BoldItalicMT', 'Liberation Mono Bold Italic', 'LiberationMono-BoldItalic']) },
+      { family: 'Liberation Mono', locals: L(['Liberation Mono', 'LiberationMono'], ['Liberation Mono Bold', 'LiberationMono-Bold'], ['Liberation Mono Italic', 'LiberationMono-Italic'], ['Liberation Mono Bold Italic', 'LiberationMono-BoldItalic']) },
     ],
   },
   {
