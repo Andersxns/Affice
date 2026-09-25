@@ -61,7 +61,7 @@ Each editor is loaded on demand, so a change to Sheets doesn't make Documents sl
 
 ## Releasing
 
-Update `version` in `package.json`, commit, then push a tag such as `v1.2.0`. The Build workflow creates the Windows installers (x64, 32-bit and ARM64, plus a portable app) and the Linux packages (AppImage, .deb, .rpm and .tar.gz) and publishes them as a GitHub release with checksums.
+Update `version` in `package.json`, write the release notes in `docs/releases/v1.2.0.md` (see the earlier versions there), commit, then push a tag such as `v1.2.0`. The Build workflow creates the Windows installers (x64, 32-bit and ARM64, plus a portable app) and the Linux packages (AppImage, .deb, .rpm and .tar.gz) and publishes them as a GitHub release with checksums.
 
 ## Reporting bugs
 

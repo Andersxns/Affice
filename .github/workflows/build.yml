@@ -89,13 +89,26 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: docs/releases
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
       - name: Checksums
         run: cd artifacts && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - name: Release name and notes
+        id: notes
+        run: |
+          echo "name=Affice ${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          # a version's own notes (docs/releases/<tag>.md) go above the generated list of changes
+          if [ -f "docs/releases/${GITHUB_REF_NAME}.md" ]; then
+            echo "path=docs/releases/${GITHUB_REF_NAME}.md" >> "$GITHUB_OUTPUT"
+          fi
       - uses: softprops/action-gh-release@v2
         with:
+          name: ${{ steps.notes.outputs.name }}
+          body_path: ${{ steps.notes.outputs.path }}
           files: artifacts/*
           generate_release_notes: true

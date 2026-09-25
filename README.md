@@ -180,7 +180,7 @@ Other useful scripts:
 | `npm run dist:win` | Builds the Windows installer and portable app into `release/` |
 | `npm run dist:linux` | Builds the AppImage, `.deb`, `.rpm` and `.tar.gz` into `release/` (`.rpm` needs `rpmbuild`) |
 
-Pushing a tag such as `v1.0.1` makes the [Build workflow](.github/workflows/build.yml) build every installer and publish them as a GitHub release.
+Pushing a tag such as `v1.0.1` makes the [Build workflow](.github/workflows/build.yml) build every installer and publish them as a GitHub release, with the notes from `docs/releases/v1.0.1.md` when there are any.
 
 ### Tech stack
 
