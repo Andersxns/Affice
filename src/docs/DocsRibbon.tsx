@@ -419,7 +419,7 @@ function HomeTab(p: TabProps) {
         </RRows>
       </RibbonGroup>
 
-      <RibbonGroup label="Paragraph">
+      <RibbonGroup label="Paragraph" collapse={2} icon={<AlignLeft />}>
         <RRows>
           <RRow>
             <RSplit
@@ -491,7 +491,7 @@ function HomeTab(p: TabProps) {
         <StyleGallery editor={editor} settings={p.settings} f={f} />
       </RibbonGroup>
 
-      <RibbonGroup label="Editing">
+      <RibbonGroup label="Editing" collapse={1} icon={<Search />}>
         <RRows>
           <RButton icon={<Search size={I} />} label="Find" keys="Ctrl+F" showLabel onClick={() => p.openFind('find')} />
           <RButton icon={<Replace size={I} />} label="Replace" keys="Ctrl+H" showLabel onClick={() => p.openFind('replace')} />

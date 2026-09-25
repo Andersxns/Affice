@@ -1,5 +1,5 @@
-import { ChevronDown, ChevronUp, PanelTopClose, PanelTopOpen } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { ChevronDown, ChevronUp, LayoutGrid, PanelTopClose, PanelTopOpen } from 'lucide-react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useSettings } from '@/app/settings';
 import { Menu, type MenuItem } from './menu';
 import { Popover } from './popover';
@@ -53,6 +53,33 @@ export function Ribbon({
   }, []);
 
   const showBody = !collapsed || peek;
+
+  // Narrow windows: step through more compact layouts until the groups fit (see [data-fitN] in shell.css).
+  // The level is set on the element directly so every level can be measured in a single pass.
+  useLayoutEffect(() => {
+    const body = bodyRef.current;
+    if (!body) return;
+    const fits = () => {
+      const panel = body.firstElementChild as HTMLElement | null;
+      return !panel || panel.scrollWidth <= body.clientWidth + 1;
+    };
+    // levels are cumulative: data-fit1 … data-fit5 are all present at level 5
+    const setLevel = (level: number) => {
+      for (let i = 1; i <= 5; i++) body.toggleAttribute(`data-fit${i}`, i <= level);
+    };
+    const measure = () => {
+      let level = 0;
+      setLevel(0);
+      while (!fits() && level < 5) setLevel(++level);
+      body.dataset.overflow = fits() ? '0' : '1';
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(body);
+    const panel = body.firstElementChild;
+    if (panel) ro.observe(panel);
+    return () => ro.disconnect();
+  }, [showBody, current?.id, mode]);
 
   return (
     <div className={`ribbon app-${app} ribbon-${mode}${collapsed ? ' collapsed' : ''}${peek ? ' peek' : ''}`}>
@@ -122,11 +149,43 @@ export function Ribbon({
   );
 }
 
-export function RibbonGroup({ label, children, className = '' }: { label: string; children: ReactNode; className?: string }) {
+/**
+ * A labelled ribbon group. Groups with a `collapse` priority fold into a single button (opening the
+ * group in a popup) when the window is too narrow: priority 1 folds first, then priority 2.
+ */
+export function RibbonGroup({ label, children, className = '', collapse, icon }: { label: string; children: ReactNode; className?: string; collapse?: 1 | 2; icon?: ReactNode }) {
   return (
-    <div className={`rgroup ${className}`}>
+    <div className={`rgroup ${className}`} data-collapse={collapse}>
       <div className="rgroup-content">{children}</div>
+      {collapse && (
+        <CollapsedGroup label={label} icon={icon} className={className}>
+          {children}
+        </CollapsedGroup>
+      )}
       <div className="rgroup-label">{label}</div>
+    </div>
+  );
+}
+
+function CollapsedGroup({ label, icon, className, children }: { label: string; icon?: ReactNode; className: string; children: ReactNode }) {
+  const ref = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rgroup-collapsed">
+      <button ref={ref} type="button" className={`rbig${open ? ' open' : ''}`} data-tip={label} onMouseDown={(e) => e.preventDefault()} onClick={() => setOpen((o) => !o)}>
+        <span className="rbig-icon">{icon ?? <LayoutGrid />}</span>
+        <span className="rbig-label">
+          {label}
+          <ChevronDown size={11} className="rbig-caret" />
+        </span>
+      </button>
+      <Popover open={open} anchor={ref.current} onClose={() => setOpen(false)} ignore={[ref.current]} className="rgroup-popover">
+        {open && (
+          <div className={`rgroup ${className}`}>
+            <div className="rgroup-content">{children}</div>
+          </div>
+        )}
+      </Popover>
     </div>
   );
 }
@@ -161,7 +220,7 @@ export function RButton({ icon, label, tip, keys, onClick, active, disabled, sho
   return (
     <button
       type="button"
-      className={`rbtn${active ? ' active' : ''}${showLabel ? ' with-label' : ''} ${className}`}
+      className={`rbtn${active ? ' active' : ''}${showLabel ? ' with-label' : ''}${icon ? ' has-icon' : ''} ${className}`}
       data-tip={tip ?? label}
       data-tip-key={keys}
       aria-label={label ?? tip}
@@ -254,7 +313,7 @@ export function RDropdown({
       <button
         ref={ref}
         type="button"
-        className={`rbtn rdrop${showLabel && label ? ' with-label' : ''}${open ? ' open' : ''}${active ? ' active' : ''} ${className}`}
+        className={`rbtn rdrop${showLabel && label ? ' with-label' : ''}${icon ? ' has-icon' : ''}${open ? ' open' : ''}${active ? ' active' : ''} ${className}`}
         data-tip={tip ?? label}
         style={width ? { width } : undefined}
         onMouseDown={(e) => e.preventDefault()}

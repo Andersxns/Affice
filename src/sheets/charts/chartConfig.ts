@@ -245,7 +245,7 @@ export function buildChartConfig(doc: SheetDoc, spec: ChartSpec, home: Sheet, da
       layout: { padding: 8 },
       plugins: {
         title: { display: !!spec.title, text: spec.title ?? '', color: text, font: { size: 15, weight: 600 }, padding: { bottom: 8 } },
-        legend: { display: legend !== 'none', position: legend === 'none' ? 'bottom' : legend, labels: { color: text, usePointStyle: true, boxWidth: 8 } },
+        legend: { display: legend !== 'none', position: legend === 'none' ? 'bottom' : legend, labels: { color: text, usePointStyle: true, pointStyle: spec.type === 'line' || spec.type === 'scatter' || spec.type === 'radar' ? 'circle' : 'rectRounded', boxWidth: 8, boxHeight: 8, padding: 14 } },
         tooltip: { enabled: true },
         afficeLabels: { show: !!spec.dataLabels, color: text },
       } as Record<string, unknown>,

@@ -408,7 +408,7 @@ function ParagraphGroup({ a }: { a: SlideActions }) {
   const isChar = t.bullet?.type === 'char';
   const isNum = t.bullet?.type === 'num';
   return (
-    <RibbonGroup label="Paragraph">
+    <RibbonGroup label="Paragraph" collapse={2} icon={<AlignLeft />}>
       <RRows>
         <RRow>
           <RSplit
@@ -544,7 +544,7 @@ function DrawingGroup({ doc, a, fillOnly }: { doc: SlidesDoc; a: SlideActions; f
   const fillColor = sel && sel.type === 'shape' && sel.fill?.type === 'solid' ? sel.fill.color : '@accent1';
   const lineColor = sel && sel.type === 'shape' && sel.line ? sel.line.color : '@accent1-25';
   return (
-    <RibbonGroup label={fillOnly ? 'Fill' : 'Drawing'}>
+    <RibbonGroup label={fillOnly ? 'Fill' : 'Drawing'} collapse={fillOnly ? undefined : 1} icon={<Shapes />}>
       {!fillOnly && (
         <>
           <RDropdown icon={<Shapes size={I} />} label="Shapes" tip="Insert a shape" panel={(close) => <ShapesPanel onPick={a.insertShape} close={close} />} />
@@ -612,7 +612,7 @@ function HomeTab({ doc, a }: { doc: SlidesDoc; a: SlideActions }) {
       <FontGroup doc={doc} a={a} />
       <ParagraphGroup a={a} />
       <DrawingGroup doc={doc} a={a} />
-      <RibbonGroup label="Editing">
+      <RibbonGroup label="Editing" collapse={1} icon={<Search />}>
         <RRows>
           <RButton icon={<Search size={I} />} label="Find" showLabel keys="Ctrl+F" onClick={() => a.find(false)} />
           <RButton icon={<Replace size={I} />} label="Replace" showLabel keys="Ctrl+H" onClick={() => a.find(true)} />

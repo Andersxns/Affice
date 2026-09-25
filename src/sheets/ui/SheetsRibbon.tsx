@@ -296,7 +296,7 @@ function HomeTab({ doc, a, st }: { doc: SheetDoc; a: SheetActions; st: CellStyle
         </RRows>
       </RibbonGroup>
 
-      <RibbonGroup label="Alignment">
+      <RibbonGroup label="Alignment" collapse={2} icon={<AlignLeft />}>
         <RRows>
           <RRow>
             <RButton icon={<AlignVerticalJustifyStart size={I} />} tip="Top align" active={st.vAlign === 'top'} onClick={() => a.style({ vAlign: 'top' }, 'Align')} />
@@ -370,7 +370,7 @@ function HomeTab({ doc, a, st }: { doc: SheetDoc; a: SheetActions; st: CellStyle
         </RRows>
       </RibbonGroup>
 
-      <RibbonGroup label="Styles">
+      <RibbonGroup label="Styles" collapse={2} icon={<Palette />}>
         <RBigButton
           icon={<Sparkles />}
           label="Conditional"
@@ -487,7 +487,7 @@ function HomeTab({ doc, a, st }: { doc: SheetDoc; a: SheetActions; st: CellStyle
         />
       </RibbonGroup>
 
-      <RibbonGroup label="Cells">
+      <RibbonGroup label="Cells" collapse={1} icon={<Rows3 />}>
         <RRows>
           <RDropdown
             icon={<Plus size={I} />}
@@ -535,7 +535,7 @@ function HomeTab({ doc, a, st }: { doc: SheetDoc; a: SheetActions; st: CellStyle
         </RRows>
       </RibbonGroup>
 
-      <RibbonGroup label="Editing">
+      <RibbonGroup label="Editing" collapse={1} icon={<Search />}>
         <RRows>
           <RRow>
             <RSplit

@@ -372,6 +372,12 @@ span.page-spacer-inline {
   overflow-x: auto;
   padding: 2px;
 }
+.ribbon-body[data-fit2] .style-gallery {
+  max-width: 320px;
+}
+.ribbon-body[data-fit3] .style-gallery {
+  max-width: 240px;
+}
 .style-tile {
   display: flex;
   flex-direction: column;

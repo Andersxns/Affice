@@ -100,11 +100,12 @@ fileAssociations:
 
 win:
   icon: build/icon.ico
+  # one installer per architecture; CI also builds ia32 and arm64 (see .github/workflows/build.yml)
   target:
     - target: nsis
-      arch: [x64, ia32, arm64]
+      arch: [x64]
     - target: portable
-      arch: [x64, ia32]
+      arch: [x64]
   artifactName: ${productName}-${version}-${os}-${arch}-setup.${ext}
   legalTrademarks: Affice
 
@@ -133,6 +134,7 @@ portable:
 linux:
   icon: build/icons
   category: Office
+  syncDesktopName: true
   synopsis: Free office suite — Documents, Sheets and Slides
   description: >-
     Affice is a free and open-source office suite with a word processor (Documents),

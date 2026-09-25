@@ -894,6 +894,16 @@
 .fx-gallery.anim {
   max-width: 700px;
 }
+/* narrow windows: galleries scroll inside their group instead of widening the ribbon */
+.ribbon-body[data-fit2] .fx-gallery {
+  max-width: 400px;
+}
+.ribbon-body[data-fit3] .fx-gallery {
+  max-width: 260px;
+}
+.ribbon-body[data-fit3] .design-gallery {
+  max-width: 330px;
+}
 .fx-item {
   flex: none;
   width: 62px;

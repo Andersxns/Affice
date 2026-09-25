@@ -424,6 +424,51 @@
 .ribbon-body::-webkit-scrollbar {
   height: 5px;
 }
+/* compact levels for narrow windows (set by the Ribbon component; each level keeps the previous ones) */
+.ribbon-body[data-fit1] .rgroup {
+  padding: 0 5px;
+}
+/* buttons with an icon drop their caption (the tooltip still names them); value dropdowns keep their text */
+.ribbon-body[data-fit2] .rrows .rbtn.has-icon.with-label .rbtn-label,
+.ribbon-body[data-fit3] .rbtn.has-icon.with-label .rbtn-label {
+  display: none;
+}
+.ribbon-body[data-fit2] .rrows .rbtn.has-icon.with-label,
+.ribbon-body[data-fit3] .rbtn.has-icon.with-label {
+  padding: 0 5px;
+}
+.ribbon-body[data-fit3] .rbig {
+  min-width: 42px;
+  max-width: 60px;
+}
+/* folded groups: priority 1 at level 4, priority 2 at level 5 */
+.rgroup-collapsed {
+  display: none;
+}
+.ribbon-body[data-fit4] .rgroup[data-collapse='1'] > .rgroup-content,
+.ribbon-body[data-fit5] .rgroup[data-collapse] > .rgroup-content {
+  display: none;
+}
+.ribbon-body[data-fit4] .rgroup[data-collapse='1'] > .rgroup-collapsed,
+.ribbon-body[data-fit5] .rgroup[data-collapse] > .rgroup-collapsed {
+  display: flex;
+  flex: 1;
+  align-items: center;
+}
+.ribbon-body[data-fit4] .rgroup[data-collapse='1'] > .rgroup-label,
+.ribbon-body[data-fit5] .rgroup[data-collapse] > .rgroup-label {
+  visibility: hidden;
+}
+.rgroup-popover {
+  padding: 8px 6px;
+}
+.rgroup-popover .rgroup {
+  padding: 0 4px;
+}
+/* still too wide: scroll, with room for the scrollbar so nothing is clipped */
+.ribbon-body[data-overflow='1'] {
+  height: calc(var(--ribbon-body-h) + 6px);
+}
 .ribbon-panel {
   display: flex;
   align-items: stretch;
@@ -471,7 +516,7 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 3px;
+  gap: 2px;
 }
 .rrow {
   display: flex;

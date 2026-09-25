@@ -1,0 +1,16 @@
+name: Feature request
+description: Suggest something Affice should do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like?
+      description: Describe the feature and the problem it solves for you.
+    validations:
+      required: true
+  - type: dropdown
+    id: app
+    attributes:
+      label: Where?
+      options: [Documents, Sheets, Slides, Dashboard / everywhere]
