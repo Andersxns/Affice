@@ -142,8 +142,8 @@ interface StageProps {
   onInk?: (slideId: string, strokes: Stroke[]) => void;
   onLaser?: (p: { x: number; y: number } | null) => void;
   onLink?: (href: string) => void;
-  /** Show the slide at a given index without its own transitions/animations (next-slide preview). */
-  still?: { index: number };
+  /** Show the slide at a given index, frozen after `done` click steps (the presenter's "next" preview). */
+  still?: { index: number; done?: number };
   className?: string;
 }
 
@@ -160,10 +160,10 @@ export function ShowStage({ pres, st, build, interactive, onClick, onInk, onLase
   const index = still ? still.index : st.index;
   const slide: Slide | undefined = pres.slides[index];
   const scale = size.w && size.h ? Math.min(size.w / pres.size.w, size.h / pres.size.h) : 0;
-  const done = still ? 0 : st.done;
+  const done = still ? (still.done ?? 0) : st.done;
   const hidden = useMemo(() => {
     if (!slide) return new Set<string>();
-    if (still) return hiddenAt(buildOf(slide), 0, null, false);
+    if (still) return hiddenAt(buildOf(slide), done, null, true);
     return hiddenAt(build, done, st.playing, st.autoDone || st.playing === -1);
   }, [slide, build, done, st.playing, st.autoDone, still]);
 
@@ -700,7 +700,7 @@ function PresenterView({ pres, show, onExit, onLink, setInk, setLaser }: { pres:
         <div className="presenter-side">
           <div className="presenter-next">
             <div className="presenter-label">{nextIdx === st.index ? 'Next: animation on this slide' : nextIdx === null ? 'End of slide show' : `Next: slide ${nextIdx + 1}`}</div>
-            {nextIdx !== null && <ShowStage pres={pres} st={st} build={show.builds[nextIdx]} still={{ index: nextIdx }} className="small" />}
+            {nextIdx !== null && <ShowStage pres={pres} st={st} build={show.builds[nextIdx]} still={{ index: nextIdx, done: nextIdx === st.index ? st.done + 1 : 0 }} className="small" />}
           </div>
           <div className="presenter-notes">
             <div className="presenter-label">

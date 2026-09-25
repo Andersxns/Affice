@@ -668,6 +668,13 @@
 .ribbon-field > span:first-child {
   min-width: 52px;
 }
+.ribbon-field .select {
+  height: 26px;
+}
+.ribbon-field.is-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
 .bullet-choice {
   font-size: 18px;
   line-height: 1;

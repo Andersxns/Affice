@@ -89,6 +89,8 @@ export function SlideCanvas({ doc, ui, active, h }: { doc: SlidesDoc; ui: Slides
   const fitZoom = Math.max(0.05, Math.min((box.w - pad * 2) / pres.size.w, (box.h - pad * 2) / pres.size.h));
   const zoom = ui.fit ? fitZoom : ui.zoom;
   ui.effectiveZoom = zoom;
+  // the status bar's zoom box renders before the canvas measures itself: tell it when the fitted zoom changes
+  useEffect(() => ui.emit(), [zoom, ui]);
 
   const focusSink = useCallback(() => {
     requestAnimationFrame(() => {

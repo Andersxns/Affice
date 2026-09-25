@@ -1,6 +1,6 @@
 import type { ChartConfiguration, ChartDataset, Plugin } from 'chart.js';
 import { cssFontStack } from '@/lib/fonts';
-import { resolveColor, type SlideChart, type Theme } from '../model';
+import { PT, resolveColor, type SlideChart, type Theme } from '../model';
 
 const ACCENTS = ['@accent1', '@accent2', '@accent3', '@accent4', '@accent5', '@accent6'];
 
@@ -23,12 +23,12 @@ export function seriesColor(chart: SlideChart, i: number, theme: Theme): string 
 const labelsPlugin: Plugin = {
   id: 'slideLabels',
   afterDatasetsDraw(chart) {
-    const opts = (chart.options.plugins as Record<string, { show?: boolean; color?: string; font?: string }>).slideLabels;
+    const opts = (chart.options.plugins as Record<string, { show?: boolean; color?: string; font?: string; size?: number }>).slideLabels;
     if (!opts?.show) return;
     const ctx = chart.ctx;
     ctx.save();
     ctx.fillStyle = opts.color ?? '#333';
-    ctx.font = `600 15px ${opts.font ?? 'sans-serif'}`;
+    ctx.font = `600 ${opts.size ?? 15}px ${opts.font ?? 'sans-serif'}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
     chart.data.datasets.forEach((ds, i) => {
@@ -90,10 +90,12 @@ export function slideChartConfig(chart: SlideChart, theme: Theme, animate: boole
     for (const ds of datasets) ds.data = (ds.data as (number | null)[]).map((v, k) => (v === null ? null : totals[k] ? (100 * v) / totals[k] : 0));
   }
   const horizontal = chart.type === 'bar';
-  const fs = (n: number) => Math.round(n * fontScale);
+  const base = (chart.fontSize ?? 14) * PT;
+  const fs = (n: number) => Math.round(((n * base) / 18.67) * fontScale * 10) / 10;
+  const titlePx = (chart.titleSize ?? (chart.fontSize ?? 14) * 1.29) * PT * fontScale;
   const legend = chart.legend ?? (chart.series.length > 1 || pie ? 'bottom' : 'none');
-  const catAxis = { stacked, grid: { display: false }, ticks: { color: text, font: { family: font, size: fs(16) } } };
-  const valAxis = { stacked, beginAtZero: true, grid: { color: grid, display: chart.gridlines !== false }, ticks: { color: text, font: { family: font, size: fs(15) } }, ...(chart.stacked === 'percent' ? { max: 100 } : {}) };
+  const catAxis = { stacked, grid: { display: false }, ticks: { color: text, font: { family: font, size: fs(18.67) } } };
+  const valAxis = { stacked, beginAtZero: true, grid: { color: grid, display: chart.gridlines !== false }, ticks: { color: text, font: { family: font, size: fs(17.5) } }, ...(chart.stacked === 'percent' ? { max: 100 } : {}) };
   return {
     type,
     data: { labels: chart.type === 'scatter' ? undefined : chart.categories, datasets },
@@ -104,15 +106,15 @@ export function slideChartConfig(chart: SlideChart, theme: Theme, animate: boole
       indexAxis: horizontal ? 'y' : 'x',
       layout: { padding: 6 },
       plugins: {
-        title: { display: !!chart.title, text: chart.title ?? '', color: text, font: { family: font, size: fs(24), weight: 600 } },
-        legend: { display: legend !== 'none', position: legend === 'none' ? 'bottom' : legend, labels: { color: text, usePointStyle: true, boxWidth: fs(10), boxHeight: fs(10), padding: fs(18), font: { family: font, size: fs(16) } } },
+        title: { display: !!chart.title, text: chart.title ?? '', color: text, font: { family: font, size: titlePx, weight: 600 } },
+        legend: { display: legend !== 'none', position: legend === 'none' ? 'bottom' : legend, labels: { color: text, usePointStyle: true, pointStyle: chart.type === 'line' || chart.type === 'scatter' || chart.type === 'radar' ? 'circle' : 'rectRounded', boxWidth: fs(11), boxHeight: fs(11), padding: fs(20), font: { family: font, size: fs(18.67) } } },
         tooltip: { enabled: animate },
-        slideLabels: { show: !!chart.dataLabels, color: text, font },
+        slideLabels: { show: !!chart.dataLabels, color: text, font, size: fs(17) },
       } as Record<string, unknown>,
       scales: (pie
         ? {}
         : chart.type === 'radar'
-          ? { r: { grid: { color: grid }, angleLines: { color: grid }, pointLabels: { color: text, font: { family: font, size: fs(15) } }, ticks: { color: text, backdropColor: 'transparent' } } }
+          ? { r: { grid: { color: grid }, angleLines: { color: grid }, pointLabels: { color: text, font: { family: font, size: fs(17.5) } }, ticks: { color: text, backdropColor: 'transparent' } } }
           : { x: horizontal ? valAxis : catAxis, y: horizontal ? catAxis : valAxis }) as never,
     },
     plugins: [labelsPlugin],

@@ -87,7 +87,7 @@ import {
 } from 'lucide-react';
 import { useState, useSyncExternalStore, type ReactNode } from 'react';
 import { ColorSplitButton } from '@/ui/color';
-import { Checkbox, NumberField } from '@/ui/controls';
+import { Checkbox, NumberField, Select } from '@/ui/controls';
 import { FontFamilyCombo, FontSizeCombo } from '@/ui/fontControls';
 import type { MenuItem } from '@/ui/menu';
 import { Ribbon, RibbonGroup, RBigButton, RButton, RDropdown, RRow, RRows, RSep, RSplit, type RibbonTab } from '@/ui/ribbon';
@@ -538,16 +538,20 @@ function QuickStyles({ doc, a, close }: { doc: SlidesDoc; a: SlideActions; close
   );
 }
 
-function DrawingGroup({ doc, a }: { doc: SlidesDoc; a: SlideActions }) {
+function DrawingGroup({ doc, a, fillOnly }: { doc: SlidesDoc; a: SlideActions; fillOnly?: boolean }) {
   const cp = colorProps(doc.pres.theme);
   const sel = a.selected.find((e) => e.type === 'shape');
   const fillColor = sel && sel.type === 'shape' && sel.fill?.type === 'solid' ? sel.fill.color : '@accent1';
   const lineColor = sel && sel.type === 'shape' && sel.line ? sel.line.color : '@accent1-25';
   return (
-    <RibbonGroup label="Drawing">
-      <RDropdown icon={<Shapes size={I} />} label="Shapes" tip="Insert a shape" panel={(close) => <ShapesPanel onPick={a.insertShape} close={close} />} />
-      <RDropdown icon={<LayoutGrid size={I} />} label="Arrange" tip="Order, group, align and rotate objects" menu={() => arrangeMenu(a)} />
-      <RDropdown icon={<WandSparkles size={I} />} label="Styles" tip="Quick shape styles" panel={(close) => <QuickStyles doc={doc} a={a} close={close} />} />
+    <RibbonGroup label={fillOnly ? 'Fill' : 'Drawing'}>
+      {!fillOnly && (
+        <>
+          <RDropdown icon={<Shapes size={I} />} label="Shapes" tip="Insert a shape" panel={(close) => <ShapesPanel onPick={a.insertShape} close={close} />} />
+          <RDropdown icon={<LayoutGrid size={I} />} label="Arrange" tip="Order, group, align and rotate objects" menu={() => arrangeMenu(a)} />
+          <RDropdown icon={<WandSparkles size={I} />} label="Styles" tip="Quick shape styles" panel={(close) => <QuickStyles doc={doc} a={a} close={close} />} />
+        </>
+      )}
       <RRows>
         <ColorSplitButton icon={<PaintBucket size={I} />} color={fillColor} tip="Shape fill" noneLabel="No fill" onApply={(c) => a.shapeFill(c ? { type: 'solid', color: c } : { type: 'none' })} {...cp} extra={(close) => <button className="menu-extra-btn" onClick={() => (close(), a.formatShape())}>More fill options…</button>} />
         <ColorSplitButton icon={<PenLine size={I} />} color={lineColor} tip="Shape outline" noneLabel="No outline" onApply={(c) => a.shapeLine(c ? { color: c } : null)} {...cp} extra={(close) => <LineOptions a={a} close={close} />} />
@@ -649,13 +653,15 @@ function InsertTab({ doc, a }: { doc: SlidesDoc; a: SlideActions }) {
         <RDropdown icon={<Shapes size={I} />} label="Shapes" tip="Insert a shape" panel={(close) => <ShapesPanel onPick={a.insertShape} close={close} />} />
         <RDropdown icon={<ChartColumn size={I} />} label="Chart" tip="Insert a chart" menu={CHARTS.map((c) => ({ label: c.label, icon: c.icon, onSelect: () => a.insertChart(c.type) }))} />
       </RibbonGroup>
+      <RibbonGroup label="Links">
+        <RBigButton icon={<Link />} label="Link" tip="Link to a web page or another slide (Ctrl+K)" onClick={a.insertLink} />
+      </RibbonGroup>
       <RibbonGroup label="Text">
         <RBigButton icon={<Type />} label="Text box" tip="Draw a text box" onClick={a.insertTextBox} />
         <RRows>
-          <RButton icon={<Link size={I} />} label="Link" showLabel keys="Ctrl+K" onClick={a.insertLink} />
           <RButton icon={<PanelBottom size={I} />} label="Header & footer" showLabel onClick={a.headerFooter} />
           <RButton icon={<Hash size={I} />} label="Slide number" showLabel onClick={() => a.insertField('slidenum')} />
-          <RButton icon={<Calendar size={I} />} label="Date" showLabel onClick={() => a.insertField('date')} />
+          <RButton icon={<Calendar size={I} />} label="Date & time" showLabel onClick={() => a.insertField('date')} />
         </RRows>
       </RibbonGroup>
     </>
@@ -846,13 +852,19 @@ function AnimationsTab({ a }: { a: SlideActions }) {
       </RibbonGroup>
       <RibbonGroup label="Timing">
         <RRows>
-          <label className="ribbon-field">
+          <label className={`ribbon-field${cur ? '' : ' is-disabled'}`}>
             <span>Start</span>
-            <select className="select select-sm" disabled={!cur} value={cur?.start ?? 'click'} onChange={(e) => a.animPatch({ start: e.target.value as 'click' })}>
-              <option value="click">On click</option>
-              <option value="with">With previous</option>
-              <option value="after">After previous</option>
-            </select>
+            <Select
+              label="Start"
+              width={140}
+              value={cur?.start ?? 'click'}
+              onChange={(v) => cur && a.animPatch({ start: v })}
+              options={[
+                { value: 'click', label: 'On click' },
+                { value: 'with', label: 'With previous' },
+                { value: 'after', label: 'After previous' },
+              ]}
+            />
           </label>
           <label className="ribbon-field">
             <span>Duration</span>
@@ -952,7 +964,7 @@ function ShapeTab({ doc, a }: { doc: SlidesDoc; a: SlideActions }) {
           <QuickStyles doc={doc} a={a} close={() => undefined} />
         </div>
       </RibbonGroup>
-      <DrawingGroup doc={doc} a={a} />
+      <DrawingGroup doc={doc} a={a} fillOnly />
       <RibbonGroup label="Effects">
         <RRows>
           <RButton icon={<Square size={I} />} label="Shadow" showLabel active={a.selected.some((e) => (e.type === 'shape' || e.type === 'image') && !!e.shadow)} onClick={() => a.shadow(!a.selected.some((e) => (e.type === 'shape' || e.type === 'image') && !!e.shadow))} />

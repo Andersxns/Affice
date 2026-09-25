@@ -341,10 +341,7 @@ function SlidesView({ tab, active, doc, ui }: { tab: Tab; active: boolean; doc: 
           });
         });
       },
-      design: (id) => {
-        doc.commit('Design', applyDesign(doc.pres, id));
-        toast.success(`${designById(id)?.name ?? 'Design'} applied`, { duration: 1800 });
-      },
+      design: (id) => doc.commit('Design', applyDesign(doc.pres, id)),
       palette: (i) => doc.commit('Theme colours', applyPalette(doc.pres, PALETTES[i].colors)),
       fonts: (i) => doc.commit('Theme fonts', applyFonts(doc.pres, FONT_PAIRS[i])),
       slideSize: (kind) => {

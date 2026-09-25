@@ -148,36 +148,68 @@ function hex2(n: number): string {
   return Math.round(Math.max(0, Math.min(255, n))).toString(16).padStart(2, '0');
 }
 
+// DrawingML applies tint and shade in linear RGB (scRGB), and luminance / saturation / hue changes in HSL
+const toLinear = (c: number) => {
+  const v = c / 255;
+  return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+};
+const fromLinear = (v: number) => 255 * (v <= 0.0031308 ? v * 12.92 : 1.055 * Math.max(0, v) ** (1 / 2.4) - 0.055);
+const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+
 function applyMods(hex: string, el: Element): string {
-  let out = hex;
+  let rgb = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  const viaHsl = (fn: (h: number, s: number, l: number) => [number, number, number]) => {
+    const [h, s, l] = rgbToHsl(rgb[0], rgb[1], rgb[2]);
+    rgb = hslToRgb(...fn(h, s, l));
+  };
   for (const m of kids(el)) {
     const v = num(m, 'val') / 100000;
     switch (m.localName) {
-      case 'lumMod': {
-        const off = kid(el, 'lumOff');
-        out = lumModOff(out, v, off ? num(off, 'val') / 100000 : 0);
+      case 'lumMod':
+        viaHsl((h, s, l) => [h, s, clamp01(l * v)]);
         break;
-      }
-      case 'tint': {
-        const [r, g, b] = [1, 3, 5].map((i) => parseInt(out.slice(i, i + 2), 16));
-        out = `#${hex2(r + (255 - r) * (1 - v))}${hex2(g + (255 - g) * (1 - v))}${hex2(b + (255 - b) * (1 - v))}`;
+      case 'lumOff':
+        viaHsl((h, s, l) => [h, s, clamp01(l + v)]);
         break;
-      }
-      case 'shade': {
-        const [r, g, b] = [1, 3, 5].map((i) => parseInt(out.slice(i, i + 2), 16));
-        out = `#${hex2(r * v)}${hex2(g * v)}${hex2(b * v)}`;
+      case 'lum':
+        viaHsl((h, s) => [h, s, clamp01(v)]);
         break;
-      }
-      case 'satMod': {
-        const [r, g, b] = [1, 3, 5].map((i) => parseInt(out.slice(i, i + 2), 16));
-        const [h, s, l] = rgbToHsl(r, g, b);
-        const [nr, ng, nb] = hslToRgb(h, Math.min(1, s * v), l);
-        out = `#${hex2(nr)}${hex2(ng)}${hex2(nb)}`;
+      case 'satMod':
+        viaHsl((h, s, l) => [h, clamp01(s * v), l]);
+        break;
+      case 'satOff':
+        viaHsl((h, s, l) => [h, clamp01(s + v), l]);
+        break;
+      case 'sat':
+        viaHsl((h, _s, l) => [h, clamp01(v), l]);
+        break;
+      case 'hueMod':
+        viaHsl((h, s, l) => [(h * v) % 1, s, l]);
+        break;
+      case 'hueOff':
+        // offsets are in 60000ths of a degree
+        viaHsl((h, s, l) => [(((h + num(m, 'val') / 21600000) % 1) + 1) % 1, s, l]);
+        break;
+      case 'comp':
+        viaHsl((h, s, l) => [(h + 0.5) % 1, s, l]);
+        break;
+      case 'tint':
+        rgb = rgb.map((c) => fromLinear(toLinear(c) * v + (1 - v)));
+        break;
+      case 'shade':
+        rgb = rgb.map((c) => fromLinear(toLinear(c) * v));
+        break;
+      case 'inv':
+        rgb = rgb.map((c) => 255 - c);
+        break;
+      case 'gray': {
+        const y = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2];
+        rgb = [y, y, y];
         break;
       }
     }
   }
-  return out.toUpperCase();
+  return `#${hex2(rgb[0])}${hex2(rgb[1])}${hex2(rgb[2])}`.toUpperCase();
 }
 
 /** Theme-aware colour value from a DrawingML colour element (schemeClr, srgbClr…). */
@@ -219,7 +251,7 @@ function colorOf(el: Element | null | undefined, env: ColorEnv): string | undefi
   if (c.localName === 'srgbClr') base = `#${(attr(c, 'val') ?? '000000').toUpperCase()}`;
   else if (c.localName === 'sysClr') base = `#${(attr(c, 'lastClr') ?? (attr(c, 'val') === 'window' ? 'FFFFFF' : '000000')).toUpperCase()}`;
   else if (c.localName === 'prstClr') base = PRESET[attr(c, 'val') ?? 'black'] ?? '#000000';
-  else if (c.localName === 'scrgbClr') base = `#${hex2((num(c, 'r') / 100000) * 255)}${hex2((num(c, 'g') / 100000) * 255)}${hex2((num(c, 'b') / 100000) * 255)}`;
+  else if (c.localName === 'scrgbClr') base = `#${hex2(fromLinear(num(c, 'r') / 100000))}${hex2(fromLinear(num(c, 'g') / 100000))}${hex2(fromLinear(num(c, 'b') / 100000))}`;
   else if (c.localName === 'hslClr') {
     const [r, g, b] = hslToRgb(num(c, 'hue') / 21600000, num(c, 'sat') / 100000, num(c, 'lum') / 100000);
     base = `#${hex2(r)}${hex2(g)}${hex2(b)}`;

@@ -1,4 +1,4 @@
-import { walkEls, type Presentation, type TextBody } from '../model';
+import { paragraphNumbers, walkEls, type Presentation, type TextBody } from '../model';
 
 function paraText(body: TextBody, i: number): string {
   return body.paras[i].runs.map((r) => (r.link ? `[${r.text}](${r.link})` : r.b && r.text.trim() ? `**${r.text}**` : r.i && r.text.trim() ? `*${r.text}*` : r.text)).join('');
@@ -15,12 +15,15 @@ export function outlineMarkdown(pres: Presentation, title: string): string {
       if (e === titleEl) return;
       if (e.type === 'shape' && e.text) {
         const body = e.text;
+        const numbers = paragraphNumbers(body.paras);
         body.paras.forEach((p, j) => {
           const text = paraText(body, j).trim();
           if (!text) return;
           const lvl = p.level ?? 0;
-          const bullet = e.ph === 'body' || e.ph === 'obj' || (p.bullet && p.bullet.type !== 'none');
-          out.push(bullet ? `${'  '.repeat(lvl)}- ${text}` : text);
+          // an explicit bullet setting wins; otherwise content placeholders are bulleted (like the renderer)
+          const bullet = p.bullet ? p.bullet.type !== 'none' : e.ph === 'body' || e.ph === 'obj';
+          const num = p.bullet?.type === 'num' ? /^(\d+)[.)]$/.exec(numbers[j] ?? '') : null;
+          out.push(num ? `${'   '.repeat(lvl)}${num[1]}. ${text}` : bullet ? `${'  '.repeat(lvl)}- ${text}` : text);
         });
         out.push('');
       } else if (e.type === 'table') {

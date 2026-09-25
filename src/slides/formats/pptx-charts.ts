@@ -43,11 +43,15 @@ function seriesXml(chart: SlideChart, i: number, colorXml: ColorXml, kind: 'bar'
   return `<c:ser><c:idx val="${i}"/><c:order val="${i}"/>${tx}${sp}${inv}${labels}${cat}<c:val>${nums}</c:val>${smooth}</c:ser>`;
 }
 
+/** Axis and legend text size in hundredths of a point. */
+const textSz = (chart: SlideChart) => Math.round((chart.fontSize ?? 14) * 100);
+const titleSz = (chart: SlideChart) => Math.round((chart.titleSize ?? (chart.fontSize ?? 14) * 1.29) * 100);
+
 const AX_CAT = 111111111;
 const AX_VAL = 222222222;
 
 function axes(chart: SlideChart, colorXml: ColorXml, horizontal: boolean, scatter: boolean): string {
-  const txt = `<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1400"><a:solidFill>${colorXml('@tx1+35')}</a:solidFill></a:defRPr></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr>`;
+  const txt = `<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="${textSz(chart)}"><a:solidFill>${colorXml('@tx1+35')}</a:solidFill></a:defRPr></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr>`;
   const grid = chart.gridlines === false ? '' : `<c:majorGridlines><c:spPr><a:ln w="9525"><a:solidFill>${colorXml('@tx1+85')}</a:solidFill></a:ln></c:spPr></c:majorGridlines>`;
   const catPos = horizontal ? 'l' : 'b';
   const valPos = horizontal ? 'b' : 'l';
@@ -88,9 +92,9 @@ export function chartSpaceXml(chart: SlideChart, colorXml: ColorXml, externalRid
     }
   }
   const legendPos = chart.legend && chart.legend !== 'none' ? { bottom: 'b', right: 'r', top: 't', left: 'l' }[chart.legend] : chart.legend === 'none' ? null : chart.series.length > 1 || chart.type === 'pie' || chart.type === 'doughnut' ? 'b' : null;
-  const legend = legendPos ? `<c:legend><c:legendPos val="${legendPos}"/><c:overlay val="0"/><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1400"><a:solidFill>${colorXml('@tx1+25')}</a:solidFill></a:defRPr></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr></c:legend>` : '';
+  const legend = legendPos ? `<c:legend><c:legendPos val="${legendPos}"/><c:overlay val="0"/><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="${textSz(chart)}"><a:solidFill>${colorXml('@tx1+25')}</a:solidFill></a:defRPr></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr></c:legend>` : '';
   const title = chart.title
-    ? `<c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1800" b="1"><a:solidFill>${colorXml('@tx1')}</a:solidFill></a:defRPr></a:pPr><a:r><a:rPr lang="en-US" sz="1800" b="1"><a:solidFill>${colorXml('@tx1')}</a:solidFill></a:rPr><a:t>${escapeXml(chart.title)}</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/></c:title><c:autoTitleDeleted val="0"/>`
+    ? `<c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="${titleSz(chart)}" b="1"><a:solidFill>${colorXml('@tx1')}</a:solidFill></a:defRPr></a:pPr><a:r><a:rPr lang="en-US" sz="${titleSz(chart)}" b="1"><a:solidFill>${colorXml('@tx1')}</a:solidFill></a:rPr><a:t>${escapeXml(chart.title)}</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/></c:title><c:autoTitleDeleted val="0"/>`
     : '<c:autoTitleDeleted val="1"/>';
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <c:chartSpace xmlns:c="${C_NS}" xmlns:a="${A_NS}" xmlns:r="${R_NS}"><c:date1904 val="0"/><c:lang val="en-US"/><c:roundedCorners val="0"/><c:chart>${title}<c:plotArea><c:layout/>${plot}<c:spPr><a:noFill/><a:ln><a:noFill/></a:ln></c:spPr></c:plotArea>${legend}<c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/></c:chart><c:spPr><a:noFill/><a:ln><a:noFill/></a:ln></c:spPr><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr><a:latin typeface="+mn-lt"/></a:defRPr></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr>${externalRid ? `<c:externalData r:id="${externalRid}"><c:autoUpdate val="0"/></c:externalData>` : ''}</c:chartSpace>`;
@@ -187,11 +191,27 @@ export function parseChartXml(xml: string, colorOf: (spPr: Element | null) => st
   out.series = out.series.map((s) => ({ ...s, values: categories.map((_, i) => s.values[i] ?? null) }));
   if (grouping === 'stacked') out.stacked = true;
   if (grouping === 'percentStacked') out.stacked = 'percent';
-  const titleEl = doc.getElementsByTagNameNS(C_NS, 'title')[0];
+  // the chart title (the title element directly inside c:chart, not an axis title)
+  const chartEl = doc.getElementsByTagNameNS(C_NS, 'chart')[0];
+  const titleEl = kid(chartEl, 'title');
+  const autoDeleted = kid(chartEl, 'autoTitleDeleted')?.getAttribute('val');
   if (titleEl) {
     const t = Array.from(titleEl.getElementsByTagNameNS(A_NS, 't')).map((x) => x.textContent ?? '').join('');
-    if (t) out.title = t;
-  }
+    // a title without text is an automatic one: the series name for single-series charts
+    out.title = t || (out.series.length === 1 ? out.series[0].name : 'Chart Title');
+  } else if (out.series.length === 1 && autoDeleted !== '1' && autoDeleted !== 'true') out.title = out.series[0].name;
+  // text sizes: axis labels, then the legend, then the chart-wide default (PowerPoint falls back to 18 pt)
+  const szOf = (el: Element | null | undefined) => {
+    const r = el ? (Array.from(el.getElementsByTagNameNS(A_NS, 'defRPr')).find((x) => x.getAttribute('sz')) ?? Array.from(el.getElementsByTagNameNS(A_NS, 'rPr')).find((x) => x.getAttribute('sz'))) : undefined;
+    return r ? Number(r.getAttribute('sz')) / 100 : undefined;
+  };
+  const axis = kid(plot, 'catAx') ?? kid(plot, 'valAx') ?? kid(plot, 'dateAx');
+  const chartSpace = doc.documentElement;
+  const size = szOf(kid(axis, 'txPr')) ?? szOf(kid(kid(chartEl, 'legend'), 'txPr')) ?? szOf(kid(chartSpace, 'txPr')) ?? 18;
+  out.fontSize = Math.round(size * 10) / 10;
+  const tsz = szOf(titleEl);
+  if (tsz) out.titleSize = tsz;
+  else if (out.title) out.titleSize = Math.round((szOf(kid(chartSpace, 'txPr')) ?? 18) * 1.2 * 10) / 10;
   const legendPos = doc.getElementsByTagNameNS(C_NS, 'legendPos')[0]?.getAttribute('val');
   out.legend = !doc.getElementsByTagNameNS(C_NS, 'legend').length ? 'none' : legendPos === 'r' ? 'right' : legendPos === 't' ? 'top' : legendPos === 'l' ? 'left' : 'bottom';
   const dl = group.getElementsByTagNameNS(C_NS, 'showVal')[0]?.getAttribute('val');

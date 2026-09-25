@@ -221,6 +221,9 @@ export interface SlideChart {
   dataLabels?: boolean;
   smooth?: boolean;
   gridlines?: boolean;
+  /** Text size of axis labels and the legend in pt (default 14); the title is 1.3× unless titleSize is set. */
+  fontSize?: number;
+  titleSize?: number;
 }
 
 export interface ChartEl extends ElBase {

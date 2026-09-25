@@ -189,7 +189,28 @@ function createMainWindow(): void {
     mainWindow = null;
   });
 
-  win.webContents.setWindowOpenHandler(({ url }) => {
+  win.webContents.setWindowOpenHandler(({ url, frameName }) => {
+    // the presenter view's audience window: full screen on a second display when there is one
+    if (frameName === 'affice-audience' && (url === 'about:blank' || url === '')) {
+      const current = screen.getDisplayMatching(win.getBounds());
+      const other = screen.getAllDisplays().find((d) => d.id !== current.id);
+      const area = (other ?? current).workArea;
+      const width = other ? area.width : Math.min(1280, area.width);
+      const height = other ? area.height : Math.min(720, area.height);
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          title: 'Affice — Slide show',
+          backgroundColor: '#000000',
+          autoHideMenuBar: true,
+          x: Math.round(area.x + (area.width - width) / 2),
+          y: Math.round(area.y + (area.height - height) / 2),
+          width,
+          height,
+          fullscreen: !!other,
+        },
+      };
+    }
     openExternalSafely(url);
     return { action: 'deny' };
   });
